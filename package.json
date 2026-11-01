@@ -1,0 +1,68 @@
+{
+  "name": "dsh-forge",
+  "version": "2.3.3",
+  "private": true,
+  "type": "module",
+  "description": "DSH 本地增强：宿主提示词/审批链改写、红队预设、逆向工作流",
+  "scripts": {
+    "build": "node scripts/build-client.mjs",
+    "build:vendor": "npx --yes esbuild node_modules/ssh2/lib/index.js --bundle --platform=node --format=cjs --outfile=lib/vendor/ssh2.cjs --external:cpu-features",
+    "preview": "node scripts/preview/server.mjs",
+    "verify": "node scripts/verify-modes.mjs",
+    "test": "node test/run.mjs",
+    "bench": "node bench/score.mjs",
+    "release": "node scripts/release.mjs"
+  },
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": "./client.next.js",
+    "./redteam": "./lib/redteam/index.js",
+    "./redteam/store": "./lib/redteam/store.js",
+    "./redteam/ui": "./lib/redteam/ui.js",
+    "./redteam/tools": "./lib/redteam/tools.js",
+    "./redteam/browser": "./lib/redteam/browser.js",
+    "./toolbox": "./lib/toolbox/index.js",
+    "./crack": "./lib/crack/index.js",
+    "./crack/rea-tools": "./lib/crack/rea-tools.js",
+    "./crack/case-tools": "./lib/crack/case-tools.js",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "dsh-forge": "bin/dsh-forge.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "dshTarget": "0.2.1-rc.5",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "files": [
+    "lib",
+    "presets",
+    "skills",
+    "bin",
+    "scripts/httpprobe.py",
+    "client.next.js",
+    "cordis.patch.yml"
+  ],
+  "devDependencies": {
+    "ssh2": "^1.17.0"
+  }
+}
