@@ -1,0 +1,97 @@
+dsh-forge
+Copyright 2026 dsh-forge contributors
+
+本项目（dsh-forge）是二开作品，不是原创，也不是任何上游的官方发布。
+本项目以 Apache License 2.0 发布（见 LICENSE）。下列上游组件各自的版权与许可
+在分发时一并保留；其中 MIT 部分的许可全文附在本文件末尾。
+
+========================================================================
+一、上游组件与版权
+========================================================================
+
+1) dsh-purge（本项目直接基于的分支）
+   仓库：https://gitee.com/biwomulunhui/dsh-purge
+   版本：1.4.1
+   许可：MIT License
+   版权：Copyright (c) 2026 小杨
+   提供：破甲（宿主补丁与提示词注入）、破解模式、面板框架。
+
+2) dsh-purge（上游原始出处）
+   仓库：https://github.com/YuJunZhiXue/dsh-purge
+   版权：Copyright 2026 YuJunZhiXue
+   上游 NOTICE 原文：
+
+       dsh-purge
+       Copyright 2026 YuJunZhiXue
+
+       Source: https://github.com/YuJunZhiXue/dsh-purge
+
+       This product is licensed under the Apache License, Version 2.0.
+       Derivative works must retain this NOTICE and attribution.
+
+   本项目从中取回了部分实现（例如 lib/redteam/evidence-ledger.mjs 的恢复版本
+   与预设默认角色稿）。这些部分仍适用 Apache License 2.0。
+
+3) dsh-redteam-mode（红队预设、面板与技能体系的起点）
+   仓库：https://github.com/Jueze-2019/dsh-redteam-mode
+   许可：MIT License
+   版权：Copyright (c) 2026 Jueze-2019
+   上游声明：不含漏洞利用代码，仅面向已获授权的安全评估。
+
+4) psnb-obs（提示词层）
+   许可：MIT License
+   提供：措辞表（lib/wording.js、data/wording_map.json）、三通道隐写（lib/stego.js）、
+   模型画像（data/model_profiles.json）、prompt-ops 方法（docs/prompt-ops.md）。
+   本项目只吸收提示词层，未搬其宿主层与联网探针。
+
+5) 海鸥 / sea-gull（skills/seagull 与 skills/external 的部分技能）
+   相关技能文件中致谢 P4nda0s、zhaoxuya520。
+
+6) ssh2（VPS 连接，打包为 lib/vendor/ssh2.cjs）
+   许可：MIT License
+   版权：Copyright (c) 2017 Brian White
+   来源：https://github.com/mscdex/ssh2
+   打包内含依赖：asn1（MIT）、bcrypt-pbkdf（MIT）、tweetnacl（Unlicense）。
+
+========================================================================
+二、修改说明
+========================================================================
+
+依据 Apache License 2.0 第 4(b) 条，说明本项目对上游所做的修改（不限于）：
+
+- 目标宿主改为 DeepSeek Harness 0.2.1-rc.3，补丁表按新版本重写与重定向；
+- 包名、数据目录、备份后缀、环境变量前缀改名隔离（dsh-purge → dsh-forge），
+  使其可与上游插件并存；
+- 补丁引擎修复：备份覆盖、逐字节还原、命中分类（live / already / satisfied /
+  dead / no-target）；
+- 红队工具合并为单一入口 redteam({action,args})，技能按判据重写；
+- 新增覆盖账本、出网自检、收口核对与 worker 写库；
+- 面板与预设的整体重做。
+- 原始文件路径、函数名与常量名可能已不存在或被重写。
+
+========================================================================
+三、MIT 许可全文（适用于上述 MIT 部分）
+========================================================================
+
+MIT License
+
+Copyright (c) 2026 小杨
+Copyright (c) 2026 Jueze-2019
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

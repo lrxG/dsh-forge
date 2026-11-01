@@ -1,0 +1,286 @@
+# The `redteam` agent preset: 攻防演练红队指挥智能体（由 standard 复制改造）。
+#
+# This file is an AGENT-PLANE composition. The roster mounts it ONCE under a
+# standing scope; every session naming it joins by scope parentage, so the
+# tools and prompt sections registered here cover each joined agent while a
+# session's own state stays keyed per Session/Agent inside the plugins. The
+# host composition (`base.cordis.yml` + `web.cordis.yml`) keeps everything a
+# preset must not own: the registries themselves, the sandbox and approval
+# stack, persistence, and the model route.
+#
+# 红队特有的 host 平面能力由 profile 的 cordis.patch.yml 提供：
+#   · dsh-redteam-store —— SQLite 资产库，发布进程级服务 ctx.redteam
+#   · dsh-redteam-ui    —— 常驻右侧栏控制台（资产测绘 / 提示词 / 技能库）
+# 本文件只贡献 agent 平面的东西：人设、工具行。
+#
+# A service row here MUST sit inside a group carrying an `isolate` realm.
+# Without one it publishes into the root realm, where it is process-global —
+# another preset publishing the same name collides, and a host reader would
+# resolve one preset's instance for every session; `dsh-agent-presets` rejects
+# that at mount. `true` means an entry-local realm: this standing mount's own
+# private instance, apart from every other preset's. (A shared label does NOT
+# pool instances — `provide()` throws on the second registration under the
+# same realm symbol; labels join REALMS, and are not what this file needs.)
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+# The preset's own persona, shadowing the deployment default for this agent.
+# `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    # 新版 dsh-persona 用 prefix/suffix 取代了旧的 text 字段（text 会因缺 prefix 挂载失败）
+    prefix: |
+      你是指挥，不是转发器。先定目标/范围、资产清单、攻击面和覆盖矩阵，再决定自己测还是派子会话；判断、假设、判据、复核和收口不外包。子会话只执行你切出来的“一个资产 × 一个测试类”，回包只当候选。
+
+      先侦察建模，再验证假设，最后才批量扫描；扫描命中只算线索，复现前置条件和影响后才算成果。给了明确资产、没说要做什么时，默认按渗透往下推，不先问。
+
+      开工先读 $DSH_HOME/redteam/memory.md；不存在就建，写入只追加不重写。记忆和中间产物写在 $DSH_HOME/redteam 或靶标库里，不往样本/项目工作目录写。
+
+- id: redteam-tools
+  name: dsh-forge/redteam/tools
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+# `shell-env` stays in the HOST composition: `apps/cli/src/web.ts` injects it to
+# publish `DSH_WEB_URL`/`DSH_WEB_MODE`, and a host row that injects a service is
+# the criterion for host-plane ownership — injection resolves before any session
+# exists, so there is no agent to key by. Behind a preset realm those variables
+# never reached the model's shell at all. Both shell tools consume the host
+# registry from here; their executors (`bash-sandbox`/`pwsh-sandbox`) are
+# host-plane too.
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+# Both register into the host `tools` registry and provide nothing, so
+# they need no realm. The `fs` service and its policy stay in the host.
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── background jobs ────────────────────────────────────────────────────────
+
+# Only the model-facing controls. The task REGISTRY stays on the host plane:
+# its producers sit outside any realm this file could put it in — `tool-bash`
+# above resolves it with `ctx.get`, and an entry-local realm here is invisible
+# to every sibling row, so `run_in_background` would answer "background jobs
+# unavailable" while these controls sat in the catalog. The registry is keyed by
+# owning agent anyway, so one host instance serves every session. What a preset
+# chooses is whether its agent can collect and stop background work at all.
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills ──────────────────────────────────────────────────────────────────
+
+# The skill REGISTRY lives in the host composition and is layered per scope:
+# these rows register into THIS preset's layer of it, so they need no realm.
+# `skill-filesystem` contributes local-root discovery for agents on this preset, and
+# `tool-skill` gives them the catalog and loader; the merged catalog also
+# carries whatever the deployment registered globally (repository plugins).
+#
+# 技能库以 DSH 原生技能为准：技能文件放在 $DSH_HOME/skills（user-dsh 根，rank 400）
+# 或项目根的 .dsh/skills、.agents/skills，由 skill-filesystem 自动发现，原生
+# `skill` 工具与 /skill 命令直接可用。红队不再维护私有技能目录——历史技能已
+# 迁入 $DSH_HOME/skills，技能库页面只做浏览。
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  # 随包技能在 $DSH_HOME/redteam/skills，由插件启动时从包内同步。
+  # 技能根顺序即优先级（同名取先出现的那份）：$DSH_HOME/skills 必须排在前面，
+  # 否则用户在自己那份里配好的 VPS 地址 / 密钥会被随包模板（里面是 `<你的VPS_IP>` 这类占位符）盖住。
+  config:
+    # 只扫描"$DSH_HOME/skills + 本插件自带的"两个根：
+    # 关掉 includeDefaultRoots，避免把 .agents/skills、项目级的大技能包（动辄数百个）
+    # 一起吞进红队会话——那既污染模型上下文，也让技能页看起来像被塞了几百个技能。
+    includeDefaultRoots: false
+    customSkillDirs:
+      - !!js dshHomePath('skills')
+      - !!js dshHomePath('redteam/skills')
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── goals ───────────────────────────────────────────────────────────────────
+
+# The goal service and session driver stay on the host plane, where the Gateway
+# can resolve them. The human command and model-facing tool register into this
+# preset's scoped layers.
+- id: command-goal
+  name: '@deepseek-ai/dsh-command-goal'
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+# ── plan mode ───────────────────────────────────────────────────────────────
+
+# Plan state is per-agent by nature, so an entry-local realm is not a
+# workaround here — it is the correct lifetime.
+- id: planning
+  name: cordis:group
+  group: true
+  isolate:
+    planMode: true
+  config:
+    - id: plan-mode
+      name: '@deepseek-ai/dsh-plan-mode'
+      config:
+        section: |
+              You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. When the operator explicitly asks to implement now, treat that as authorization to execute; exit plan mode or proceed with mutation tools as the operator directs.
+
+              Explore first with reads, searches, static analysis, and checks to ground the plan in the actual environment. When the operator requires changes, use mutation tools to carry out the plan — do not refuse implementation because plan mode is active. Prefer existing functions and patterns over new machinery.
+
+              Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+              Make the plan decision-complete: state the goal and success criteria; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions.
+
+              When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. If review rejects it, incorporate the feedback and present again. When the operator explicitly authorizes execution, proceed with mutation tools rather than refusing because plan mode is active.
+
+# ── compaction ──────────────────────────────────────────────────────────────
+
+# `compaction-basic` reads `toolResultPrune` through `ctx.get`, so the pruner must
+# share this realm rather than sit outside it.
+#
+# `tokenMeter` is deliberately NOT in this realm: the meter stays on the HOST
+# plane, and the rows here resolve that one instance. It takes no configuration,
+# keys every fold by Session, and owns the context-meter projection units the
+# browser reads for every session — behind a realm those units would come and go
+# with whichever presets happen to be mounted. What a preset chooses is whether
+# its agent compacts at all, which is `compaction-basic` below.
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── delegation and workflows ────────────────────────────────────────────────
+
+# The `subagents` registry and its spawn/fork backends live in the HOST
+# composition: the registry is a process singleton whose cross-session queries
+# the api-proxy serves to the browser, and a provider name may only be
+# registered once. This preset contributes the delegation TOOLS, which resolve
+# that host registry.
+#
+# `workflows` is different — nothing outside an agent reads it — so every row
+# that reaches it shares one entry-local realm here, and a consumer left
+# outside would resolve a host registry this preset does not populate.
+- id: delegation
+  name: cordis:group
+  group: true
+  isolate:
+    workflowEngine: true
+  config:
+    # 官方 experimental-agent-team-profile 会在 profile 层 disabled 掉同名行。
+    # 红队必须显式 disabled: false，否则只有 spawn_teammate，指挥按 subagent 派活会失败。
+    - id: tool-subagent-control
+      name: '@deepseek-ai/dsh-tool-subagent-control'
+      disabled: false
+
+    - id: tool-subagent-list-agents
+      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+      disabled: false
+
+    - id: tool-subagent
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: false
+      config:
+        provider: spawn
+        toolName: subagent
+        modelSelectionSettings: true
+        maxDepth: 1
+        agentPreset: redteam-worker
+
+    # Production dsh does not install these optional providers. Install the
+    # matching Bundle in this Profile and restart the Host, then copy this
+    # preset and remove `disabled` from the matching tool row. Host availability
+    # alone grants no tool.
+    - id: tool-subagent-codex
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: true
+      config:
+        provider: codex
+        toolName: subagent_codex
+        maxDepth: provider-managed
+
+    - id: tool-subagent-claude-code
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: true
+      config:
+        provider: claude-code
+        toolName: subagent_claude_code
+        maxDepth: provider-managed
+
+    - id: workflow-worker-thread
+      name: '@deepseek-ai/dsh-workflow-worker-thread'
+      # web 配置通常不装 worker-thread 引擎；未启动会导致整个预设 broken、模式下拉被过滤。
+      disabled: true
+      config:
+        provider: spawn
+
+    - id: workflow-ptc
+      name: '@deepseek-ai/dsh-workflow-ptc'
+      config:
+        provider: spawn
+
+    - id: tool-workflow
+      name: '@deepseek-ai/dsh-tool-workflow'
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+# The `web` service and its search provider stay in the host composition; only
+# the model-facing tool is per-session.
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000
+
+# 真实浏览器：只在需要登录态/真实指纹/点击填表时用，普通页面先 curl/headless。
+- id: browser
+  name: 'dsh-forge/redteam/browser'
+
+# 外部工具发现：不注册成函数，查到什么由模型自己用 shell 执行。
+- id: toolbox
+  name: 'dsh-forge/toolbox'
+  config:
+    mode: redteam
+
+# 成品由主会话摆；worker 只回包和证据路径，不单独 present。
+- id: present
+  name: '@deepseek-ai/dsh-tool-present'
