@@ -1294,7 +1294,7 @@ function dfPermSubscribe(fn) {
 /** 写操作前缀：命中后清缓存。 */
 /** 写操作：成功后清空读缓存。显式列出，避免把 platformConfigGet 这类读 op 也当成写。 */
 const DF_WRITE_OPS = {
-  openEngagement: 1, activateEngagement: 1, deleteEngagement: 1, import: 1,
+  openEngagement: 1, activateEngagement: 1, deleteEngagement: 1, deleteEngagements: 1, import: 1,
   assetTest: 1, assessAsset: 1, addChainStep: 1, addHttpEvidence: 1,
   addAsset: 1, addPort: 1, addService: 1, addFingerprint: 1, addVuln: 1,
   addCredential: 1, addAccess: 1, addTunnel: 1, addWebshell: 1,
@@ -2067,6 +2067,7 @@ function dfInjectStyles() {
   .df-menu-item.on{background:var(--df-sel)}
   .df-menu-item .df-mi-ico{width:18px;flex:none;display:flex;align-items:center;justify-content:center;color:var(--df-faint)}
   .df-menu-item.on .df-mi-ico{color:var(--df-ink)}
+.df-menu-item.is-broken .df-mi-side{color:var(--df-warn)}
   .df-menu-item .df-mi-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
   .df-menu-item .df-mi-main b{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .df-menu-item .df-mi-main span{font-size:12px;color:var(--df-sub);font-variant-numeric:tabular-nums}
@@ -4436,10 +4437,15 @@ function DfDock(props) {
   useEffect(function () {
     if (!boot.data) return
     const list = boot.data.engagements || []
-    const fallback = boot.data.current || (list[0] && list[0].id) || ''
-    if (!fallback) return
+    const usable = list.filter(function (e) { return !e.broken })
+    const fallback = boot.data.current || (usable[0] && usable[0].id) || ''
+    if (!fallback) {
+      /* 只剩缺库残骸时不要把它当当前靶标，否则每个页面都会打开失败；让它留在列表里可删。 */
+      if (eng) setEng('')
+      return
+    }
     /* 跟随全局/模型当前靶标：会话里 open/bind 了新靶标，面板不用再手动切一次。 */
-    const stale = !eng || !list.some(function (e) { return e.id === eng })
+    const stale = !eng || !usable.some(function (e) { return e.id === eng })
     const moved = Boolean(boot.data.current) && String(boot.data.current) !== eng
     if (stale || moved) setEng(String(fallback))
   }, [boot.data])
@@ -4674,12 +4680,41 @@ function DfDock(props) {
       }
       dfBust()
       const rest = engagements.filter(function (e) { return e.id !== id })
-      const next = rest[0]
+      const next = rest.filter(function (e) { return !e.broken })[0] || rest[0]
       setEng(next ? String(next.id) : '')
       setDrawer(null)
       setTick(function (t) { return t + 1 })
       if (next) dfToast('已删除靶标，已切到「' + (next.name || next.id) + '」', 'ok', 2400)
       else dfToast('已删除靶标', 'ok', 2000)
+      if (onDone) onDone(true)
+    })
+  }
+
+  function deleteTargets(ids, force, onDone) {
+    const list = Array.isArray(ids) ? ids.map(String).filter(Boolean) : []
+    if (!list.length) { if (onDone) onDone(false); return }
+    setTargetBusy(true)
+    dfApi('deleteEngagements', { engagements: list, confirm: true, force: !!force }).then(function (r) {
+      setTargetBusy(false)
+      const deleted = (r && Array.isArray(r.deleted)) ? r.deleted : []
+      if ((!r || r.ok === false) && deleted.length === 0) {
+        dfToast((r && r.error) || '批量删除失败', 'err', 5200)
+        if (onDone) onDone(false)
+        return
+      }
+      dfBust()
+      const gone = new Set(r.deleted || list)
+      const rest = engagements.filter(function (e) { return !gone.has(e.id) })
+      const stillCurrent = rest.filter(function (e) { return e.id === eng && !e.broken })[0]
+      const next = stillCurrent || rest.filter(function (e) { return !e.broken })[0] || rest[0]
+      setEng(next ? String(next.id) : '')
+      setDrawer(null)
+      setTick(function (t) { return t + 1 })
+      const n = (r.deleted || []).length || list.length
+      const failed = Array.isArray(r.failed) ? r.failed : []
+      dfToast('已删除 ' + n + ' 个靶标'
+        + (failed.length ? '，' + failed.length + ' 个失败：' + failed.map(function (x) { return x.id }).join('、') : '')
+        + (next ? '；已切到「' + (next.name || next.id) + '」' : ''), failed.length ? 'warn' : 'ok', 3200)
       if (onDone) onDone(true)
     })
   }
@@ -4937,6 +4972,7 @@ function DfDock(props) {
           onSwitch: switchTarget,
           onCreate: createTarget,
           onDelete: deleteTarget,
+          onBulkDelete: deleteTargets,
         }),
         h(DfInjectChip, {
           state: injectState,
@@ -5394,6 +5430,7 @@ function DfTargetMenu(props) {
   const [stats, setStats] = useState(null)
   const [statsErr, setStatsErr] = useState('')
   const [statsBusy, setStatsBusy] = useState(false)
+  const [selected, setSelected] = useState([])
   const boxRef = useRef(null)
 
   dfUseOutside(boxRef, function () { setOpen(false) }, open)
@@ -5412,6 +5449,12 @@ function DfTargetMenu(props) {
 
   const list = props.engagements || []
   const cur = list.filter(function (e) { return e.id === props.current })[0] || null
+  const selectedItems = list.filter(function (e) { return selected.indexOf(e.id) >= 0 })
+  const selectedTotal = selectedItems.reduce(function (n, e) {
+    const s = e.stats || {}
+    return n + (Number(s.assets) || 0) + (Number(s.vulns) || 0)
+      + (Number(s.credentials) || 0) + (Number(s.accesses) || 0)
+  }, 0)
 
   useEffect(function () {
     if (!open || mode !== 'delete' || !props.current) return
@@ -5436,6 +5479,13 @@ function DfTargetMenu(props) {
     setScopeCheck(dfScopeParseText(''))
     setStats(null)
     setStatsErr('')
+    setSelected([])
+  }
+
+  function toggleSelected(id) {
+    setSelected(function (cur) {
+      return cur.indexOf(id) >= 0 ? cur.filter(function (x) { return x !== id }) : cur.concat([id])
+    })
   }
 
   const counts = stats || null
@@ -5471,18 +5521,34 @@ function DfTargetMenu(props) {
               const s = e.stats || {}
               return h('button', {
                 key: e.id, type: 'button',
-                className: dfCx('df-menu-item', e.id === props.current && 'on'),
-                onClick: function () { if (e.id !== props.current) props.onSwitch(e.id); closeAll() },
+                className: dfCx('df-menu-item', e.id === props.current && 'on', e.broken && 'is-broken'),
+                onClick: function () {
+                  if (e.broken) {
+                    dfToast('该靶标数据不完整（' + ((e.missing || []).join('、') || '缺文件') + '），已选中，请用「批量删除」移除', 'warn', 4200)
+                    setMode('bulk')
+                    setSelected([e.id])
+                    return
+                  }
+                  if (e.id !== props.current) props.onSwitch(e.id)
+                  closeAll()
+                },
               },
                 h('span', { className: 'df-mi-ico' }, dfIcon(e.id === props.current ? 'check' : 'target', 13)),
                 h('span', { className: 'df-mi-main' },
-                  h('b', null, e.name || e.id),
+                  h('b', null, e.name || e.id, e.broken ? h('span', { className: 'dfx-spacer' }, ' · 数据损坏') : null),
                   h('span', null, String(s.assets || 0) + ' 资产 · ' + String(s.vulns || 0) + ' 漏洞 · ' + String(s.accesses || 0) + ' 访问')),
-                h('span', { className: 'df-mi-side' }, dfAgo(e.created_at)))
+                h('span', { className: 'df-mi-side' }, e.broken ? '可删除' : dfAgo(e.created_at)))
             })
             : h('div', { className: 'df-menu-empty' }, '还没有靶标，先新建一个。')),
         h('div', { className: 'df-menu-ft' },
           h(DfBtn, { size: 'sm', icon: 'plus', onClick: function () { setMode('create') } }, '新建靶标'),
+          list.length > 1 || list.some(function (e) { return e.broken })
+            ? h(DfBtn, {
+              size: 'sm', kind: 'ghost', icon: 'close',
+              title: '批量删除靶标',
+              onClick: function () { setSelected([]); setMode('bulk') },
+            }, '批量删除')
+            : null,
           h('span', { className: 'dfx-spacer' }),
           cur ? h(DfBtn, {
             size: 'sm', kind: 'ghost', icon: 'sliders',
@@ -5569,6 +5635,50 @@ function DfTargetMenu(props) {
           h('span', { className: 'dfx-spacer' }),
           h(DfBtn, { size: 'sm', kind: 'ghost', onClick: function () { setMode('list') } }, '返回')),
       ) : null,
+
+      mode === 'bulk' ? h('div', { className: 'df-menu-form' },
+        h('div', { className: 'df-menu-hd' },
+          '批量删除靶标',
+          h('span', { className: 'df-count' }, String(selected.length) + ' / ' + String(list.length))),
+        h('div', { className: 'df-menu-list' },
+          list.map(function (e) {
+            const on = selected.indexOf(e.id) >= 0
+            const s = e.stats || {}
+            return h('button', {
+              key: e.id, type: 'button',
+              className: dfCx('df-menu-item', on && 'on', e.broken && 'is-broken'),
+              onClick: function () { toggleSelected(e.id) },
+            },
+              h('span', { className: 'df-mi-ico' }, dfIcon(on ? 'check' : 'target', 13)),
+              h('span', { className: 'df-mi-main' },
+                h('b', null, e.name || e.id, e.broken ? h('span', { className: 'dfx-spacer' }, ' · 数据损坏') : null),
+                h('span', null, String(s.assets || 0) + ' 资产 · ' + String(s.vulns || 0) + ' 漏洞 · '
+                  + String(s.accesses || 0) + ' 访问'
+                  + (e.broken ? ' · 缺 ' + ((e.missing || []).join('、') || '文件') : ''))),
+              h('span', { className: 'df-mi-side' }, e.broken ? '可删除' : dfAgo(e.created_at)))
+          })),
+        selectedTotal > 0
+          ? h('div', { className: 'df-menu-note is-warn' },
+            '选中的靶标共有 ' + String(selectedTotal) + ' 条成果，删除会连同数据库一起清空。')
+          : h('div', { className: 'df-menu-note' },
+            '勾选要删除的靶标；缺库残骸也可以在这里清掉。'),
+        h('div', { className: 'df-menu-ft' },
+          h(DfBtn, {
+            size: 'sm', kind: 'ghost',
+            onClick: function () {
+              setSelected(selected.length === list.length ? [] : list.map(function (e) { return e.id }))
+            },
+          }, selected.length === list.length ? '清空' : '全选'),
+          h('span', { className: 'dfx-spacer' }),
+          h(DfBtn, {
+            size: 'sm', kind: 'solid-danger', icon: 'alert',
+            disabled: props.busy || selected.length === 0,
+            onClick: function () {
+              props.onBulkDelete(selected, selectedTotal > 0, function (ok) { if (ok) closeAll() })
+            },
+          }, props.busy ? '删除中…' : (selectedTotal > 0 ? '删除选中（含成果）' : '删除选中')),
+          h(DfBtn, { size: 'sm', kind: 'ghost', onClick: function () { setMode('list') } }, '取消')))
+        : null,
 
       mode === 'delete' ? h('div', { className: 'df-menu-form' },
         h('div', { className: 'df-menu-hd' }, '删除靶标'),
@@ -7554,13 +7664,22 @@ function DfTools(props) {
     })
   }
 
-  function removeToolRoot(dir) {
+  function removeToolRoot(dir, source) {
     if (rootBusy) return
+    if (source === 'config') {
+      const ok = typeof window !== 'undefined' && typeof window.confirm === 'function'
+        ? window.confirm('移除「' + dir + '」后，该目录会从平台配置里删除；\n'
+          + '这个目录对应的手动工具路径也会移除（文件本身不动，子目录里的其它根保留）。\n\n继续？')
+        : true
+      if (!ok) return
+    }
     setRootBusy('remove:' + dir)
     dfApi('toolboxRemoveRoot', { dir: dir, mode: mode }, { ttl: 0 }).then(function (r) {
       setRootBusy('')
       if (!r || r.ok === false) { dfToast((r && r.error) || '移除目录失败', 'err', 4200); return }
-      dfToast('已移除并同步：' + (r.count || 0) + ' 个工具', 'ok', 2400)
+      const removed = r.config && Array.isArray(r.config.removed_tools) ? r.config.removed_tools.length : 0
+      dfToast('已移除并同步：' + (r.count || 0) + ' 个工具'
+        + (removed ? '，同时移除 ' + removed + ' 条手动工具路径' : ''), 'ok', 3200)
       state.reload()
     }).catch(function (e) {
       setRootBusy('')
@@ -7665,7 +7784,7 @@ function DfTools(props) {
 
     h(DfCard, {
       title: '工具发现目录', icon: 'folder',
-      sub: '只扫这些目录，不扫整条 PATH；默认目录固定，用户目录可移除',
+      sub: '只扫这些目录，不扫整条 PATH；插件默认目录固定，手动指定/用户目录可移除',
     },
       h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' } },
         h('input', {
@@ -7687,7 +7806,7 @@ function DfTools(props) {
         ? h('div', { style: { marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 } },
           rootsAll.map(function (r) {
             const src = DF_TOOL_SOURCE[r.source] || r.source || ''
-            const removable = r.source === 'user'
+            const removable = r.source === 'user' || r.source === 'config'
             return h('div', {
               key: r.path,
               style: {
@@ -7700,8 +7819,9 @@ function DfTools(props) {
               removable
                 ? h(DfBtn, {
                   size: 'sm', kind: 'ghost', icon: 'close',
-                  disabled: !!rootBusy, onClick: function () { removeToolRoot(r.path) },
-                }, '移除')
+                  title: r.source === 'config' ? '从平台配置移除该目录（含该目录下已登记的工具路径）' : '从发现目录移除',
+                  disabled: !!rootBusy, onClick: function () { removeToolRoot(r.path, r.source) },
+                }, rootBusy === 'remove:' + r.path ? '移除中…' : '移除')
                 : null)
           }))
         : h('div', { className: 'df-hint', style: { marginTop: 8 } },
@@ -9891,7 +10011,7 @@ function DfEnv(props) {
           h('label', null, '代理地址'),
           h('input', {
             className: 'df-input', value: d.egressProxy || '',
-            placeholder: '127.0.0.1:10808（有密码写 user:pass@127.0.0.1:10808）',
+            placeholder: '127.0.0.1:1080（有密码写 user:pass@127.0.0.1:1080）',
             onChange: function (e) { set('egressProxy', e.target.value) },
           })),
         h('div', { className: 'df-field' },
