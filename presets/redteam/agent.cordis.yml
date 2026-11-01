@@ -35,7 +35,7 @@
 
       先侦察建模，再验证假设，最后才批量扫描；扫描命中只算线索，复现前置条件和影响后才算成果。给了明确资产、没说要做什么时，默认按渗透往下推，不先问。
 
-      开工先读 $DSH_HOME/redteam/memory.md 与 $DSH_HOME/redteam/MEMORY.md；不存在就建，写入只追加不重写。记忆和中间产物写在 $DSH_HOME/redteam 或靶标库里，不往样本/项目工作目录写。
+      开工先读 $DSH_HOME/redteam/memory.md；不存在就建，写入只追加不重写。记忆和中间产物写在 $DSH_HOME/redteam 或靶标库里，不往样本/项目工作目录写。
 
 - id: redteam-tools
   name: dsh-forge/redteam/tools

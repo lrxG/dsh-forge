@@ -4077,8 +4077,12 @@ const DF_VIEWS = DF_NAV.reduce(function (acc, g) {
 
 const DF_VIEW_KEYS = DF_VIEWS.map(function (v) { return v.key })
 
-/* 未读红点：digest 分区 → 视图 */
-const DF_DIGEST_MAP = { assets: 'assets', findings: 'vulns', chain: 'chain', sessions: 'sessions', knowledge: 'knowledge', prompts: 'agents' }
+/* 未读红点：视图 key → digest 分区（方向不能反：hasNew(view) 用视图查分区） */
+const DF_DIGEST_MAP = {
+  assets: 'assets', vulns: 'findings', chain: 'chain', sessions: 'sessions',
+  knowledge: 'knowledge', score: 'score', report: 'report',
+  prompts: 'prompts', skills: 'skills',
+}
 
 const DF_KEY_GEOM = 'dsh-forge-client-geom-v4'
 const DF_KEY_VIEW = 'dsh-forge-client-view-v4'
@@ -5994,7 +5998,7 @@ const DF_SEV = {
 }
 
 const DF_TEST_LABEL = {
-  untested: '未测', testing: '测试中', tested: '已测',
+  untested: '未侦察', testing: '侦察中', tested: '侦察完成',
   blocked: '受阻', abandoned: '已放弃', no_surface: '无攻击面',
 }
 const DF_TEST_KIND = {
@@ -6156,6 +6160,14 @@ function DfSevBadge(props) {
 function DfTestChip(props) {
   const key = String(props.status || 'untested')
   return h(DfChip, { kind: DF_TEST_KIND[key] || 'line' }, DF_TEST_LABEL[key] || key)
+}
+
+/* 覆盖矩阵是收口门认的那本账；资产级“侦察状态”单独显示，避免面板说已测、门禁说未测。 */
+function DfCoverageChip(props) {
+  const done = Number(props.done) || 0
+  const total = Number(props.total) || 8
+  const kind = done === 0 ? 'line' : (done >= total ? 'ok' : 'info')
+  return h(DfChip, { kind: kind, title: (props.missing || []).join(' / ') }, done + '/' + total)
 }
 
 function DfVulnStatusChip(props) {
@@ -6562,8 +6574,15 @@ function DfAssets(props) {
                 columns: [
                   { key: 'ip', title: '资产', width: '24%', sortable: true, render: function (r) { return h(DfAssetCell, { asset: r }) } },
                   {
-                    key: 'test_status', title: '测试', width: 92,
-                    sortValue: function (r) { return DF_TEST_LABEL[r.test_status] || '未测' },
+                    key: 'coverage', title: '覆盖', width: 76,
+                    sortValue: function (r) { return Number(r.coverage_done) || 0 },
+                    render: function (r) {
+                      return h(DfCoverageChip, { done: r.coverage_done, total: r.coverage_total, missing: r.coverage_missing })
+                    },
+                  },
+                  {
+                    key: 'test_status', title: '侦察', width: 92,
+                    sortValue: function (r) { return DF_TEST_LABEL[r.test_status] || '未侦察' },
                     render: function (r) { return h(DfTestChip, { status: r.test_status }) },
                   },
                   {
@@ -6622,10 +6641,10 @@ function DfAssetTestBox(props) {
     h('div', { className: 'df-detail-hd' },
       h('h4', null, '人工记录'),
       h(DfTestChip, { status: status })),
-    h('div', { className: 'df-hint' }, '人工测试结果，AI 评估资产时会读取。'),
+    h('div', { className: 'df-hint' }, '资产级侦察/测试记录，AI 评估资产时会读取；八类覆盖以矩阵为准，不在这里代替。'),
     h(DfSeg, {
       value: status,
-      items: [['untested', '未测'], ['tested', '已测'], ['blocked', '受阻'], ['no_surface', '无攻击面'], ['abandoned', '放弃']],
+      items: [['untested', '未侦察'], ['tested', '侦察完成'], ['blocked', '受阻'], ['no_surface', '无攻击面'], ['abandoned', '放弃']],
       onChange: function (v) { setStatus(v) },
     }),
     h('textarea', {
@@ -6659,7 +6678,8 @@ function dfAssetDrawer(a, eng, onDone) {
       ['主域名', a.primary_name],
       ['范围', dfScopeLabel(a.scope)],
       ['状态', DF_ASSET_STATE[a.state] || dfDash(a.state)],
-      ['测试', DF_TEST_LABEL[a.test_status] || a.test_status],
+      ['覆盖', (a.coverage_done || 0) + '/' + (a.coverage_total || 8) + (a.coverage_missing && a.coverage_missing.length ? '（缺：' + a.coverage_missing.join('、') + '）' : '')],
+      ['侦察状态', DF_TEST_LABEL[a.test_status] || a.test_status],
       ['优先级', a.priority ? dfPriorityLabel(a.priority) : ''],
       ['开放端口', (a.open_port_count || ports.length) + ' 个'],
       ['发现时间', dfTime(a.discovered_at || a.first_seen)],
@@ -6678,7 +6698,9 @@ function dfAssetDrawer(a, eng, onDone) {
             dfDraftToComposer([
               '看一下这个资产（id=' + a.id + '）：' + a.ip + (a.primary_name ? '（' + a.primary_name + '）' : ''),
               dfEngagementLine(eng),
-              '范围：' + dfScopeLabel(a.scope) + ' · 测试状态：' + (DF_TEST_LABEL[a.test_status] || a.test_status || '未测'),
+              '范围：' + dfScopeLabel(a.scope) + ' · 侦察状态：' + (DF_TEST_LABEL[a.test_status] || a.test_status || '未侦察')
+                + ' · 覆盖：' + (a.coverage_done || 0) + '/' + (a.coverage_total || 8)
+                + (a.coverage_missing && a.coverage_missing.length ? '（缺：' + a.coverage_missing.join('、') + '）' : ''),
               '开放端口：' + portText,
               '先判断优先测试哪个攻击面，必要时继续。',
             ].filter(Boolean).join('\n'), '已把资产放进输入框')
@@ -8545,7 +8567,7 @@ function DfDeliverables(props) {
       }),
       h(DfStat, {
         label: '缺复现请求', icon: 'terminal', value: dfNum(s.noHttp || 0),
-        foot: s.noHttp ? '报告里没有请求原文' : '全部有请求原文',
+        foot: s.noHttp ? 'HTTP 漏洞没有请求原文' : 'HTTP 漏洞都有请求原文',
         accent: (s.noHttp || 0) > 0,
       }),
       h(DfStat, {
@@ -8673,7 +8695,7 @@ function DfPentestReport(props) {
   const total = Number(st.total || 0)
   const pending = Number(st.pending_review || 0)
   const blockedCount = blocked
-    ? (Number(blocked.untestedAssets) || 0) + (Number(blocked.matrixGaps) || 0) + (Number(blocked.coverageGaps) || 0)
+    ? (Number(blocked.untestedAssets) || 0) + (Number(blocked.matrixGaps) || 0)
       + (Number(blocked.noEvidence) || 0) + (Number(blocked.noHttp) || 0) + (Number(blocked.evidenceMismatch) || 0)
       + (Number(blocked.openHypotheses) || 0) + (Number(blocked.chainGaps) || 0)
       + (Number(blocked.tunnelGaps) || 0) + (Number(blocked.webshellGaps) || 0)
@@ -8702,7 +8724,6 @@ function DfPentestReport(props) {
           setBlocked({
             untestedAssets: Number(r.untestedAssets) || 0,
             matrixGaps: Number(r.matrixGaps) || 0,
-            coverageGaps: Number(r.coverageGaps) || 0,
             noEvidence: Array.isArray(r.noEvidence) ? r.noEvidence.length : 0,
             noHttp: Array.isArray(r.noHttp) ? r.noHttp.length : 0,
             evidenceMismatch: Array.isArray(r.evidenceMismatch) ? r.evidenceMismatch.length : 0,
@@ -8862,7 +8883,7 @@ function DfPentestReport(props) {
                 : null,
               blocked
                 ? h('div', { className: 'df-note df-note--warn', style: { flex: '1 1 100%' } },
-                  '收口未清零：未测资产 ' + dfNum(blocked.untestedAssets) + '、矩阵空格 ' + dfNum(blocked.matrixGaps) + '、覆盖缺口 ' + dfNum(blocked.coverageGaps) + '、无证据 ' + dfNum(blocked.noEvidence) + '、缺 HTTP 报文 ' + dfNum(blocked.noHttp) + '、证据不同源 ' + dfNum(blocked.evidenceMismatch) + '、未关假设 ' + dfNum(blocked.openHypotheses) + '、步骤缺口 ' + dfNum(blocked.chainGaps) + '、通道缺口 ' + dfNum(blocked.tunnelGaps) + '/' + dfNum(blocked.webshellGaps) + '。修完点「重新检查」；确认要交再点「强制生成」。')
+                  '收口未清零：未测资产 ' + dfNum(blocked.untestedAssets) + '、矩阵空格 ' + dfNum(blocked.matrixGaps) + '、无证据 ' + dfNum(blocked.noEvidence) + '、HTTP 漏洞缺报文 ' + dfNum(blocked.noHttp) + '、证据不同源 ' + dfNum(blocked.evidenceMismatch) + '、未关假设 ' + dfNum(blocked.openHypotheses) + '、步骤缺口 ' + dfNum(blocked.chainGaps) + '、通道缺口 ' + dfNum(blocked.tunnelGaps) + '/' + dfNum(blocked.webshellGaps) + '。修完点「重新检查」；确认要交再点「强制生成」。')
                 : pending > 0
                   ? h('div', { className: 'df-note df-note--warn', style: { flex: '1 1 100%' } },
                     '还有 ' + dfNum(pending) + ' 条待复核，只能生成草稿。',
@@ -8875,7 +8896,6 @@ function DfPentestReport(props) {
 }
 
 /* ---------------------------------------------------------------- 成果 */
-
 
 
 /* ---- lib/client/35-knowledge.js ---- */
@@ -14120,9 +14140,11 @@ function DfAgents(props) {
   }
 
   const agentsData = agentState.data || {}
+  const agentsError = agentsData.ok === false ? String(agentsData.error || '并发状态读取失败') : ''
   const max = Number(agentsData.max) || 0
   const used = Number(agentsData.used) || 0
-  const limit = Number(agentsData.limit) || 64
+  /* 服务端 MAX_AGENTS_LIMIT 是 32；读取失败时不能把滑块放到 64。 */
+  const limit = Number(agentsData.limit) || 32
   const running = Array.isArray(agentsData.running) ? agentsData.running : []
   const n = Number(draft)
   const canSaveMax = isFinite(n) && n >= 1 && n <= limit && Math.floor(n) === n && n !== max
@@ -14256,6 +14278,9 @@ function DfAgents(props) {
       title: '子智能体并发', icon: 'bolt',
       sub: '上限 ' + dfNum(limit) + ' · 正在执行 ' + dfNum(used) + ' · 改动立即生效',
     },
+      agentsError
+        ? h('div', { className: 'df-note df-note--warn', style: { margin: '0 0 8px' } }, '并发状态读取失败：' + agentsError)
+        : null,
       h('div', { className: 'df-statsbar' },
         h(DfStat, { label: '并发上限', icon: 'users', value: max, unit: '个', foot: '来源 · ' + dfAgentsSource(agentsData.source) }),
         h(DfStat, { label: '正在执行', icon: 'bolt', value: used, accent: used > 0, foot: used ? '占用中' : '空闲' }),

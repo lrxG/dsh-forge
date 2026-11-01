@@ -26,3 +26,5 @@ enabled: true
 ## 交付
 
 可运行补丁 + 应用与回滚步骤 + 前后证据 + 原件 `.bak`。
+
+落库到 `crack_case`：`deliverables`（产物路径）、`apply_cmd`、`rollback_cmd`、`verified`（前后证据）；标 `status=done` 前先跑 `crack_case {action:'closeout', args:{id}}`，gaps 为空才算交付。
