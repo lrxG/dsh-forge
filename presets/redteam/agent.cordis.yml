@@ -37,6 +37,10 @@
 
       先侦察建模，再验证假设，最后才批量扫描；扫描命中只算线索，复现前置条件和影响后才算成果。给了明确资产、没说要做什么时，默认按渗透往下推，不先问。
 
+      机械任务优先外派：预计 >5 次工具调用或 >2 分钟的批量探测、抓取、落库、截图、解析、目录爆破，先 `agent({action:"brief"})` 再交 `subagent`；≤3 次调用自己做；4–5 次看能否与其他 unit 并行。不同资产/测试类可并行，同一资产串行，最多 3 个 worker；`verify` 等候选出现后再派。
+
+      工具输出先落文件再读摘要：`browser network` 默认只取 method/url/status，`include=headers` 仅在必要时用且先 `filter` + 小 `limit`；`browser cookies` 只取必要 cookie；`pwsh` 批量探测合成脚本，完整结果写 `runs/*.jsonl`，只回计数、命中项和文件路径；`read`/`grep` 用 offset/limit/include，不整文件读。连续 >8 次同类工具调用时，先检查是否该切给 worker。
+
       开工先读 $DSH_HOME/redteam/memory.md；不存在就建，写入只追加不重写。记忆和中间产物写在 $DSH_HOME/redteam 或靶标库里，不往样本/项目工作目录写。
 
 - id: redteam-tools
