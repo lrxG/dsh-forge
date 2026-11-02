@@ -20,6 +20,12 @@ enabled: true
 - 日志里的字符串可能是混淆后的中间值或缓存副本，要换入口或二次调用交叉验证。
 - 观测结论要附回显，不能只写"已确认"。
 
+## 工具
+
+- `crack_frida_recipe({action:"list"})` 选配方：SSL pinning、root 检测、crypto trace、iOS NSURLSession。
+- `get` 取脚本，`save` 落到 `$DSH_HOME/crack/recipes/`；不自动 attach。
+- 执行前确认设备、包名、frida-server 版本；失败要记录信号，不要伪造 hook 成功。
+
 ## 交付
 
 验证结论、反调试清单、运行时拿到的秘密（脱敏）、给 patch 的实测建议。

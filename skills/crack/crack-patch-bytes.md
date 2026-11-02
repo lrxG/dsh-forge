@@ -20,6 +20,13 @@ enabled: true
 
 APK 改完要重签名（apksigner 优先，jarsigner 兜底）；.NET 走 IL 层改或去强命名。
 
+## 工具
+
+- 用 `crack_binary_patch` 写副本，不要原地改；`output` 必须不同于 `input`。
+- 每个补丁带 `expect` 原字节，失败会整体中止；PE 会自动重算 checksum。
+- 先用 `dry_run:true` 验证偏移和断言，再落盘。
+- 交付要带输入/输出 SHA-256、偏移、长度、回滚副本路径。
+
 ## 判据
 
 - 改的必须是**判断点本身**：行为差异只出现在这一项功能上，其它功能不动。

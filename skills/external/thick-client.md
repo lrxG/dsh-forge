@@ -1,6 +1,6 @@
 ---
 name: thick-client
-description: Use for authorized security testing of desktop thick clients including local storage, update channels, IPC, traffic, and client-side trust boundaries.
+description: 桌面客户端安全测试：本地存储、更新通道、IPC、流量与信任边界。
 whenToUse: 目标是桌面厚客户端（Electron/Qt/.NET WinForms/WPF）、要查本地存储/IPC/更新通道信任边界时
 ---
 

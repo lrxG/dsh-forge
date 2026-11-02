@@ -1,6 +1,6 @@
 ---
 name: audit-sink-flow
-description: 白盒 sink 与可控性判定：source 可控、传播无净化、sink 危险、入口可达四段全通才算，附"有防护/可绕/只是像"三档
+description: 白盒 sink 判定：source 可控、无净化、sink 危险、入口可达，四段全通才算。
 whenToUse: 已经确认入口，手里有一条从参数到危险调用的路径，要判断它到底能不能被外部驱动
 role: vuln-scan
 enabled: true

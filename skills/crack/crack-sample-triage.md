@@ -12,6 +12,11 @@ enabled: true
 
 类型（魔数，不是扩展名）· 有没有壳（段表与导入表印证，不是看字符串）· 入口在哪 · 授权线索在哪。
 
+## 工具
+
+- 先跑 `crack_toolchain({action:"status"})`：缺 jadx / apktool / frida 时把 `blocked` 和缺失工具写进结论，不要假装能反编译或动态调试。
+- 需要动态观测时再用 `crack_frida_recipe`，静态补丁用 `crack_binary_patch`。
+
 ## 路由
 
 | 样本 | 先看哪里 |

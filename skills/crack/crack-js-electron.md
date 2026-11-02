@@ -1,6 +1,6 @@
 ---
 name: crack-js-electron
-description: JS / Electron / 小程序逆向：asar 解包重打包、授权逻辑定位、sourcemap 还原、wxapkg 解包、混淆处理。
+description: JS/Electron/小程序逆向：asar 解包、sourcemap、wxapkg、混淆与授权逻辑定位。
 whenToUse: 目标是 Electron、小程序（wxapkg）、Node 打包应用或纯前端校验时
 role: static
 enabled: true

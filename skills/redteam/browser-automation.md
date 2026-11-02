@@ -30,6 +30,18 @@ headless 的关键参数是**等多久再取页面**：给太短，SPA 只交出
 渲染后的 DOM 里通常已经带着路径常量；JS bundle 里更多——前端路由与接口地址常埋在那里。
 做法是从 DOM 与 bundle 里提路径、去重、成清单，再拿清单去打；提出来的是**候选**，判据见下节。
 
+### 运行时抓包
+
+登录后真实请求用 `browser({action:"network", args:{filter:"/api", include:"full"}})`：
+
+- `include:"summary"`：method/url/status/type/bodyBytes，默认
+- `include:"headers"`：加请求/响应头
+- `include:"body"`：加 postData/响应体（已截断）
+- `include:"full"`：全量，含 WebSocket 帧
+
+body 只落 `runs/`，索引写回资产/接口清单；不要把整段响应灌进对话。
+把运行时行和静态路径交给 `agent({action:"inventory"})` 合并，得到 `METHOD /path [params] [static|runtime]`，再逐条验证。没有登录态时先 `cookies` 取 Cookie 给 curl/重放用。
+
 ## 判据：什么算抓到了
 
 - 渲染成功的判据是 **DOM 里有业务数据**（列表项、价格、资源 id），不是命令返回成功，也不是标题正常。

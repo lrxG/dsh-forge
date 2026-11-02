@@ -1,6 +1,6 @@
 ---
 name: rev-symbol
-description: Restore function symbols by analyzing code patterns, strings, constants, and cross-references
+description: 从代码模式、字符串、常量与交叉引用恢复函数符号。
 whenToUse: 函数全是 sub_XXXX 需要恢复符号名、或靠魔数/调用对识别算法时
 ---
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-forge",
-  "version": "2.3.3",
+  "version": "2.3.9",
   "private": true,
   "type": "module",
   "description": "DSH 本地增强：宿主提示词/审批链改写、红队预设、逆向工作流",
@@ -28,6 +28,8 @@
     "./crack": "./lib/crack/index.js",
     "./crack/rea-tools": "./lib/crack/rea-tools.js",
     "./crack/case-tools": "./lib/crack/case-tools.js",
+    "./crack/toolchain-tools": "./lib/crack/toolchain-tools.js",
+    "./agent": "./lib/agent/index.js",
     "./package.json": "./package.json"
   },
   "bin": {

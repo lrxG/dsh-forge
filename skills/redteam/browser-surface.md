@@ -1,6 +1,6 @@
 ---
 name: browser-surface
-description: 前端与浏览器面判断：XSS、CSRF、postMessage、CSP——能不能在别人的浏览器里执行我的代码，或让已登录的人替我发请求
+description: 浏览器面：XSS/CSRF/postMessage/CSP，判断能否在他人浏览器执行或借登录态发请求。
 whenToUse: 目标有表单、富文本、个人资料回显、单页应用、iframe 嵌套或跨窗口通信，或需要判断前端能不能被利用
 role: vuln-scan
 enabled: true

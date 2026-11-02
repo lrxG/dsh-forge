@@ -3318,9 +3318,14 @@ function dfInjectStyles() {
   .df-btn--lg{height:35px;padding:0 15px;font-size:12.5px}
   .df-btn--primary{background:var(--df-accent);border-color:var(--df-accent);color:var(--df-ink-inv);box-shadow:0 6px 16px -12px var(--df-accent)}
   .df-btn--primary:hover{background:var(--df-accent-hover);border-color:var(--df-accent-hover)}
-  .df-btn--ghost{border-color:transparent;color:var(--df-sub)}
+  .df-btn--ghost{border-color:transparent;color:var(--df-sub);background:transparent}
   .df-btn--ghost:hover{background:var(--df-hover);border-color:transparent;color:var(--df-ink)}
   .df-btn--danger{border-color:var(--df-err-soft)}
+  /* v2 的 .df-btn 基础样式在这一层把 background 覆盖成 surface，
+     变体必须在这之后重新声明，否则实心红按钮 = 米色底 + 白字（看不见）。 */
+  .df-btn--solid-danger{background:var(--df-err-solid);border-color:var(--df-err-solid);color:#fff}
+  .df-btn--solid-danger:hover{background:color-mix(in srgb,var(--df-err-solid) 86%,#000);
+    border-color:color-mix(in srgb,var(--df-err-solid) 86%,#000)}
   .df-input,.df-select,.df-area{border:1px solid var(--df-line);border-radius:8px;background:var(--df-surface-2);font-size:12px;height:31px}
   .df-input:focus,.df-select:focus,.df-area:focus{background:var(--df-surface);border-color:var(--df-accent);box-shadow:0 0 0 3px var(--df-accent-soft)}
   .df-chip{height:21px;padding:0 7px;font-size:9.5px;font-weight:650}
@@ -5203,6 +5208,18 @@ function dfCurrentAgentPreset() {
     if (preset) return preset
   } catch (e) { /* fall through */ }
   return 'redteam'
+}
+
+/** 与服务端 normalizeModeId 对齐的精简版：worker / 命名空间 / 中文都归到主模式。 */
+function dfModeId(value) {
+  let m = String(value || '').toLowerCase()
+  if (!m) return ''
+  if (m.endsWith('/redteam-worker')) return 'redteam'
+  if (m.endsWith('/crack-worker')) return 'crack'
+  if (m.endsWith('-worker')) m = m.slice(0, -7)
+  if (m.endsWith('/redteam') || m === 'preset-redteam' || m === 'red-team' || /红队/.test(m)) return 'redteam'
+  if (m.endsWith('/crack') || m === 'preset-crack' || /破解/.test(m)) return 'crack'
+  return m
 }
 
 function dfScopeCovered(mode, scopes) {
@@ -8444,27 +8461,39 @@ function DfShots(props) {
   const [busy, setBusy] = useState(false)
   const [confirmId, setConfirmId] = useState(null)
   const [openId, setOpenId] = useState(null)
+  const [scope, setScope] = useState('')
   const confirmTimer = useRef(0)
 
   const load = useCallback(function () {
     setLoading(true)
     setOpenId(null)
-    dfApi('shots', {
-      engagement: props.eng,
-      vuln_id: props.vulnId === undefined ? undefined : props.vulnId,
-      asset_id: props.assetId === undefined ? undefined : props.assetId,
-      point_code: props.pointCode || undefined,
-      limit: 60,
-    }).then(function (r) {
+    setScope('')
+    const base = { engagement: props.eng, point_code: props.pointCode || undefined, limit: 60 }
+    const finish = function (r, fallback) {
       setLoading(false)
-      if (!r || r.ok === false) { setErr((r && r.error) || '读取截图失败'); return }
+      if (!r || r.ok === false) { setErr((r && r.error) || '获取截图失败'); return }
       setErr('')
-      setItems(r.items || [])
+      const items = r.items || []
+      setItems(items)
+      setScope(fallback && items.length ? 'asset' : '')
+    }
+    if (props.vulnId === undefined && props.assetId === undefined) { finish({ ok: true, items: [] }, false); return }
+    const first = props.vulnId === undefined
+      ? Promise.resolve({ ok: true, items: [] })
+      : dfApi('shots', Object.assign({}, base, { vuln_id: props.vulnId }))
+    first.then(function (r) {
+      const got = (r && r.items) || []
+      if (got.length > 0 || props.assetId === undefined) { finish(r, false); return }
+      dfApi('shots', Object.assign({}, base, { asset_id: props.assetId })).then(function (r2) {
+        finish(r2, true)
+      }, function (e) {
+        setLoading(false)
+        setErr(String((e && e.message) || e))
+      })
     }, function (e) {
       setLoading(false)
       setErr(String((e && e.message) || e))
-    })
-  }, [props.eng, props.vulnId, props.assetId, props.pointCode])
+    })  }, [props.eng, props.vulnId, props.assetId, props.pointCode])
 
   useEffect(function () {
     load()
@@ -8550,6 +8579,7 @@ function DfShots(props) {
         ? h('div', { className: 'df-note' }, '正在读取截图…')
         : items.length
           ? h('div', null,
+            scope === 'asset' ? h('div', { className: 'df-note df-note--warn', style: { marginBottom: 8 } }, '这些是资产级截图（未绑定本漏洞）。要挂到漏洞上，需要在复现时带 vuln_id，或用 capture 拍摄。') : null,
             h('div', { className: 'df-shots' }, items.map(function (sh) {
               return h('div', { key: sh.id, className: 'df-shot' },
                 h('button', {
@@ -10374,7 +10404,14 @@ function DfInstructionEditor(props) {
   const [loaded, setLoaded] = useState(false)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const dirty = loaded && text !== orig
+
+  useEffect(function () {
+    if (!confirmDelete) return undefined
+    const t = window.setTimeout(function () { setConfirmDelete(false) }, 5000)
+    return function () { window.clearTimeout(t) }
+  }, [confirmDelete])
 
   useEffect(function () {
     let alive = true
@@ -10419,6 +10456,15 @@ function DfInstructionEditor(props) {
     h('div', { className: 'df-formfoot' },
       h('span', { className: 'df-ops-meta' }, dfNum(text.length) + ' 字符 · 下一轮生效'),
       h('span', { className: 'df-spacer' }),
+      props.file && props.file.exists && props.onDelete ? h(DfBtn, {
+        size: 'sm', kind: confirmDelete ? 'danger' : 'ghost', icon: 'trash', disabled: busy,
+        onClick: function () {
+          if (!confirmDelete) { setConfirmDelete(true); return }
+          setConfirmDelete(false)
+          props.onDelete()
+        },
+        onBlur: function () { setConfirmDelete(false) },
+      }, confirmDelete ? '确认删除文件' : '删除文件') : null,
       h(DfBtn, { size: 'sm', kind: 'primary', icon: 'check', disabled: busy || !dirty, onClick: save }, busy ? '保存中…' : '保存')))
 }
 
@@ -10530,8 +10576,10 @@ function DfMainInject(props) {
   const content = String(d.content || '')
   const template = String(d.template || '')
   const current = templates.find(function (t) { return t.id === template })
+  /* "custom" 既可能是通用未保存标记，也可能是真实的自定义模板；有文件才算模板。 */
+  const customMissing = template === 'custom' && !current
   const currentName = template === 'custom'
-    ? '自定义'
+    ? (current ? current.name : '自定义')
     : (current ? current.name : (template || '—'))
   const scopeNames = scopes.map(function (id) {
     const hit = modes.find(function (m) { return m.id === id })
@@ -10543,7 +10591,8 @@ function DfMainInject(props) {
   const currentCovered = dfScopeCovered(currentMode, scopes)
   const currentStock = dfStockMode(currentMode)
   const builtin = template === 'minimal' || template === 'redteam'
-  const canDelete = !builtin && template !== 'custom' && !!current
+  /* 有真实模板文件才给删除；旧的 "custom" 标记没有文件时 current 为空，不会误删。 */
+  const canDelete = !builtin && !!current
 
   function post(action, extra) {
     if (busy) return Promise.resolve(null)
@@ -10606,7 +10655,12 @@ function DfMainInject(props) {
         onSave: function (text) {
           return dfHostPost('/dsh-forge/inject', { action: 'saveContent', content: text })
         },
-        onDone: function () { if (props.onChanged) props.onChanged(); dfBust() },
+        onDone: function () {
+          if (props.onChanged) props.onChanged()
+          dfBust()
+          /* 保存后回到模板列表，新生成的自定义模板马上能看到删除按钮。 */
+          if (props.onCloseDrawer) props.onCloseDrawer()
+        },
       }),
     })
   }
@@ -10633,7 +10687,7 @@ function DfMainInject(props) {
     post('reset').then(function (r) {
       if (r && r.ok !== false) {
         setConfirmReset(false)
-        dfToast('已恢复最简破甲', 'ok', 2600)
+        dfToast('已恢复默认全量破甲', 'ok', 2600)
       }
     })
   }
@@ -10716,15 +10770,14 @@ function DfMainInject(props) {
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 } },
       h('span', { className: 'df-label' }, '模板'),
       h('select', {
-        className: 'df-select', value: template === 'custom' ? '' : template,
+        className: 'df-select', value: customMissing ? '' : template,
         disabled: !!busy,
         style: { width: 220 },
         onChange: function (e) { applyTemplate(e.target.value) },
       },
-        template === 'custom' ? h('option', { value: '' }, '自定义（未保存为模板）') : null,
+        customMissing ? h('option', { value: '' }, '自定义（未保存为模板）') : null,
         templates.map(function (t) {
-          return h('option', { key: t.id, value: t.id },
-            t.name + (t.builtin ? '' : ' · 自定义'))
+          return h('option', { key: t.id, value: t.id }, t.name)
         })),
       canDelete ? h(DfBtn, {
         size: 'sm', kind: confirmDelete ? 'danger' : 'ghost', icon: 'trash', disabled: !!busy,
@@ -10742,7 +10795,7 @@ function DfMainInject(props) {
 
     h('div', { className: 'df-scope-line' },
       h('div', { className: 'df-scope-main' },
-        h('span', { className: 'df-label' }, '生效范围'),
+        h('span', { className: 'df-label' }, '生效范围（仅勾选的模式）'),
         scopeNames.length
           ? h('div', { className: 'df-scope-chips' },
             scopeNames.slice(0, 4).map(function (name) {
@@ -10755,7 +10808,7 @@ function DfMainInject(props) {
       h(DfBtn, {
         size: 'sm', kind: 'ghost', icon: 'sliders', disabled: !!busy,
         onClick: openScopes,
-      }, '管理')),
+      }, '选择模式')),
 
     h('div', { className: 'df-note' }, '没勾的模式保持 DeepSeek Harness 原生人格；改动下一轮生效。'),
     content
@@ -10783,14 +10836,25 @@ function DfInjectSelfCheck(props) {
   function check() {
     if (busy) return
     setBusy(true)
-    dfHost('/dsh-forge/assembled').then(function (r) {
+    /* 必须按当前模式取快照：全局最后一次组装可能来自 standard/别的会话。 */
+    const mode = dfModeId(dfCurrentAgentPreset())
+    const query = mode ? '?mode=' + encodeURIComponent(mode) : ''
+    dfHost('/dsh-forge/assembled' + query).then(function (r) {
       setBusy(false)
       if (!r || r.ok === false) {
         setRes({ state: 'error', msg: (r && r.error) || '读不到实际组装' })
         return
       }
       if (r.empty) {
-        setRes({ state: 'empty', msg: '还没有捕获到组装结果；先在当前会话发一条消息，再点「重新检查」。' })
+        setRes({ state: 'empty', msg: '当前模式还没有捕获到组装结果；先在当前会话发一条消息，再点「重新检查」。', mode: mode })
+        return
+      }
+      if (mode && r.mode && String(r.mode) !== String(mode)) {
+        setRes({
+          state: 'miss',
+          msg: '最近一次捕获属于「' + dfModeTitle(r.mode) + '」，不是当前模式；请先在当前模式发一条消息再检查。',
+          mode: r.mode,
+        })
         return
       }
       const secs = Array.isArray(r.sections) ? r.sections : []
@@ -10951,6 +11015,18 @@ function DfInstructionsPage(props) {
           f.exists = true
           bump()
           openInstruction(f)
+        },
+        onDelete: function () {
+          return dfHostPost('/dsh-forge/instructions', { action: 'delete', path: f.path }).then(function (r) {
+            if (!r || r.ok === false) { dfToast((r && r.error) || '删除失败', 'err', 4200); return r }
+            f.exists = false
+            f.size = 0
+            f.mtime = null
+            dfToast('指令文件已删除，下一轮生效', 'ok', 2600)
+            if (props.onCloseDrawer) props.onCloseDrawer()
+            bump()
+            return r
+          })
         },
       }),
     })
@@ -11313,6 +11389,7 @@ function dfPatchIdsLabel(r) {
 
 function DfPatchPanel(props) {
   const [tag, setTag] = useState('')
+  const [mech, setMech] = useState('')
   const [status, setStatus] = useState('')
   const [onlyOff, setOnlyOff] = useState(false)
   const [tech, setTech] = useState(false)
@@ -11327,6 +11404,7 @@ function DfPatchPanel(props) {
   const [confirmOff, setConfirmOff] = useState(0)
   const [confirmRevert, setConfirmRevert] = useState(false)
   const [confirmApply, setConfirmApply] = useState(false)
+  const [hookBusy, setHookBusy] = useState('')
 
   /* 「写入宿主」会改宿主源码，二次确认；8 秒不点自动收回。 */
   useEffect(function () {
@@ -11390,6 +11468,34 @@ function DfPatchPanel(props) {
     })
   })
   /* 核心永远排最前：用户先看到“破甲链路”，再看到通用补丁。 */
+  /* 上游移植的两个运行时钩子：并入同一份列表，编号 96/97。
+     它们不改宿主文件，写入宿主会跳过；开关直连 /dsh-forge/runtime-hooks。 */
+  const rt = d.runtime_hooks || {}
+  const anchorOn = (d.anchor && d.anchor.enabled) === true
+  const subOn = (d.subagent_control && d.subagent_control.enabled) === true
+  all.push({
+    id: 96, ids: [96], name: 'ANCHOR_TAIL',
+    title: '尾部锚点',
+    what: '在发给模型的系统提示最末尾追加一段“操作者授权”声明：防止顶部的破甲规则被截断、被压缩、或被别的提示顶掉时失效，同时约束回复格式（直接给结果、不道歉）。',
+    on: '每轮提示末尾都带锚点；顶部规则丢失时仍能兜底。',
+    off: '完全依赖顶部注入；注入被截断时没有兜底。',
+    effect: '下一轮对话生效（不写宿主，不用重启）',
+    note: '和「破甲注入」是同一套规则：两个都开会让规则出现两遍、白烧 token。建议默认关，只在注入不稳定时临时打开。',
+    tags: ['提示词'], mechanism: 'hook', essential: false,
+    enabled: anchorOn, status: anchorOn ? 'applied' : 'off',
+  })
+  all.push({
+    id: 97, ids: [97], name: 'SUBAGENT_CONTROL',
+    title: '子代理接管',
+    what: 'dsh 把子会话的审批策略写死成 never，子会话一调工具就被判“拒绝”，不是问你而是静默失败。开启后把它翻回 ask，让子会话能申请一次审批。',
+    on: '子会话可以申请审批：不会一动手就被静默拒绝，派活才有效。',
+    off: '按宿主原策略：子会话的工具调用可能直接被拒。',
+    effect: '下一轮对话 / 下次派发生效（不写宿主）',
+    note: '红队、破解都依赖子会话干活，建议保持开启。',
+    tags: ['权限'], mechanism: 'hook', essential: false,
+    enabled: subOn, status: subOn ? 'applied' : 'off',
+  })
+
   const allSorted = all.slice().sort(function (a, b) {
     return (b.essential ? 1 : 0) - (a.essential ? 1 : 0) || a.id - b.id
   })
@@ -11407,14 +11513,16 @@ function DfPatchPanel(props) {
   all.forEach(function (p) {
     if (p.status && statuses.indexOf(p.status) < 0) statuses.push(p.status)
   })
+  const HOOK_MANAGED = [30, 31, 64, 65]   /* 这四条由「hooks 决定权」统一管理，列表里不重复出现 */
   const rows = allSorted.filter(function (p) {
+    if (HOOK_MANAGED.indexOf(Number(p.id)) >= 0) return false
     if (tag && (p.tags || []).indexOf(tag) < 0) return false
     if (status && p.status !== status) return false
     if (onlyOff && p.enabled !== false) return false
     return true
   })
   /* 可选依赖补丁：显示在列表里，但开关禁用（依赖没装 = 无法启动），不参与统计。 */
-  const depRows = optional.map(function (o) {
+  const depRows = optional.filter(function (o) { return HOOK_MANAGED.indexOf(Number(o.id)) < 0 }).map(function (o) {
     return Object.assign({}, o, {
       status: 'dep', enabled: false, optionalDep: true,
       tags: Array.isArray(o.tags) ? o.tags : ['可选'],
@@ -11422,6 +11530,23 @@ function DfPatchPanel(props) {
   })
   const showDeps = (!tag || tag === '可选') && !status && !onlyOff
   const shownRows = rows.concat(showDeps ? depRows : [])
+    .filter(function (r) {
+      if (HOOK_MANAGED.indexOf(Number(r.id)) >= 0) return false
+      if (!mech) return true
+      if (mech === 'core') return Boolean(r.essential)
+      if (mech === 'hook') return r.mechanism === 'hook' && !r.optionalDep
+      if (mech === 'host') return r.mechanism !== 'hook' && !r.optionalDep
+      if (mech === 'dep') return Boolean(r.optionalDep)
+      return true
+    })
+    .sort(function (a, b) {
+      const rank = function (r) {
+        if (r.essential) return 0
+        if (r.optionalDep) return 3
+        return r.mechanism === 'hook' ? 1 : 2
+      }
+      return rank(a) - rank(b) || Number(a.id) - Number(b.id)
+    })
   const coreAll = all.filter(function (p) { return p.essential })
   const coreOn = coreAll.filter(function (p) { return p.enabled !== false }).length
   const offCount = all.filter(function (p) { return p.enabled === false }).length
@@ -11491,6 +11616,7 @@ function DfPatchPanel(props) {
         ['编号', dfPatchIdsLabel(r) + ((r.ids || []).length > 1 ? '（同组一起启停）' : '')],
         ['英文标识', r.name],
         ['层', r.layer],
+        ['机制', r.mechanism === 'hook' ? '钩子（进程内生效，不写宿主）' : '宿主补丁（写入宿主 + 重启）'],
         ...(r.optionalDep
           ? [['依赖', r.dependency || '可选插件'], ['启用', '装上依赖后才能启用']]
           : [['开关', r.enabled === false
@@ -11528,6 +11654,19 @@ function DfPatchPanel(props) {
      核心补丁用两段式确认（不用 window.confirm，避免阻塞渲染线程）。 */
   function togglePatch(r) {
     if (prefBusy) return
+    /* 运行时钩子：不走补丁偏好，直接改 runtime-hooks.json（96=锚点，97=子代理接管） */
+    if (r.mechanism === 'hook' && (Number(r.id) === 96 || Number(r.id) === 97)) {
+      const turningOff = r.enabled !== false
+      const body = r.id === 96 ? { anchor: !turningOff } : { subagentControl: !turningOff }
+      setPrefBusy(r.id)
+      dfHostPost('/dsh-forge/runtime-hooks', body).then(function (res) {
+        setPrefBusy(0)
+        if (!res || res.ok === false) { dfToast((res && res.error) || '切换失败', 'err', 4600); return }
+        dfToast((turningOff ? '已关闭「' : '已启用「') + (r.title || r.name) + '」', 'ok', 2600)
+        state.reload()
+      })
+      return
+    }
     const turningOff = r.enabled !== false
     if (turningOff && r.essential && confirmOff !== r.id) {
       setConfirmOff(r.id)
@@ -11659,6 +11798,24 @@ function DfPatchPanel(props) {
     }, function (e) {
       setSaveBusy(false)
       dfToast(String(e && e.message ? e.message : e), 'err', 4600)
+    })
+  }
+
+  /* 运行时钩子开关：写 $DSH_HOME/dsh-forge/runtime-hooks.json，下一轮组装即生效。 */
+  function toggleHook(name, next) {
+    if (hookBusy) return
+    setHookBusy(name)
+    const body = {}
+    body[name] = next
+    dfHostPost('/dsh-forge/runtime-hooks', body).then(function (r) {
+      setHookBusy('')
+      if (!r || r.ok === false) { dfToast((r && r.error) || '保存失败', 'err', 4200); return }
+      const label = name === 'anchor' ? '尾部锚点' : '子代理审批接管'
+      dfToast(label + '已' + (next ? '开启' : '关闭'), 'ok', 2200)
+      if (state && typeof state.reload === 'function') state.reload()
+    }, function (e) {
+      setHookBusy('')
+      dfToast(String(e && e.message ? e.message : e), 'err', 4200)
     })
   }
 
@@ -11833,12 +11990,46 @@ function DfPatchPanel(props) {
           onClick: function () { setOnlyOff(function (v) { return !v }) },
         }, '只看已停用 ' + dfNum(offCount))),
       /* 标签筛选：核心第一，点一下只看这一类；再点一次取消。 */
+      /* 机制筛选：钩子 = 改完立即生效；宿主 = 需要写入宿主并重启 */
       h('div', { className: 'df-tagbar' },
+        h('span', { className: 'df-ops-meta', style: { alignSelf: 'center', minWidth: 34 } }, '机制'),
+        h('button', {
+          type: 'button',
+          className: dfCx('df-agent-mode', !mech && 'is-on'),
+          onClick: function () { setMech('') },
+        }, '全部机制 ' + dfNum(all.length + depRows.length)),
+        h('button', {
+          type: 'button',
+          className: dfCx('df-agent-mode', 'df-tag-chip', mech === 'core' && 'is-on'),
+          title: '核心补丁：固定置顶，关闭需要二次确认',
+          onClick: function () { setMech(mech === 'core' ? '' : 'core') },
+        }, '核心 ' + dfNum(all.filter(function (r) { return r.essential }).length)),
+        h('button', {
+          type: 'button',
+          className: dfCx('df-agent-mode', 'df-tag-chip', mech === 'hook' && 'is-on'),
+          title: '运行时钩子：插件在拼提示词时改写，不需要写入宿主，也不用重启',
+          onClick: function () { setMech(mech === 'hook' ? '' : 'hook') },
+        }, '钩子 ' + dfNum(all.filter(function (r) { return r.mechanism === 'hook' }).length)),
+        h('button', {
+          type: 'button',
+          className: dfCx('df-agent-mode', 'df-tag-chip', mech === 'host' && 'is-on'),
+          title: '宿主补丁：要写入宿主文件并重启才生效',
+          onClick: function () { setMech(mech === 'host' ? '' : 'host') },
+        }, '宿主 ' + dfNum(all.filter(function (r) { return r.mechanism !== 'hook' }).length)),
+        h('button', {
+          type: 'button',
+          className: dfCx('df-agent-mode', 'df-tag-chip', mech === 'dep' && 'is-on'),
+          title: '依赖没装，暂时无法启用',
+          onClick: function () { setMech(mech === 'dep' ? '' : 'dep') },
+        }, '依赖缺失 ' + dfNum(depRows.length))),
+
+      h('div', { className: 'df-tagbar' },
+        h('span', { className: 'df-ops-meta', style: { alignSelf: 'center', minWidth: 34 } }, '标签'),
         h('button', {
           type: 'button',
           className: dfCx('df-agent-mode', !tag && 'is-on'),
           onClick: function () { setTag('') },
-        }, '全部 ' + dfNum(all.length + optional.length)),
+        }, '全部 ' + dfNum(all.length + depRows.length)),
         tags.map(function (t) {
           return h('button', {
             key: t,
@@ -11902,6 +12093,18 @@ function DfPatchPanel(props) {
                 },
               },
               {
+                key: 'mechanism', title: '机制', width: 84,
+                render: function (r) {
+                  if (r.optionalDep) return h('span', { className: 'df-hint', title: '依赖未安装' }, '—')
+                  const hook = r.mechanism === 'hook'
+                  return h('span', {
+                    className: 'df-hint',
+                    title: hook ? '钩子：插件进程内生效，不写宿主文件' : '宿主补丁：需要写入宿主并重启',
+                    style: { whiteSpace: 'nowrap' },
+                  }, hook ? '⚡ 钩子' : '▣ 宿主')
+                },
+              },
+              {
                 key: 'tags', title: '标签', width: 190,
                 render: function (r) {
                   const list = r.tags || []
@@ -11949,8 +12152,62 @@ function DfPatchPanel(props) {
             title: '补丁定义已加载，还没有绑定宿主',
             hint: '点「写入宿主」解开密封包并写入这 ' + dfNum(all.length) + ' 条补丁；写入后重启客户端生效。',
           })
-          : h(DfEmpty, { icon: 'wrench', title: '没有匹配的补丁', hint: '换一个标签或状态筛选试试。' })))
+          : h(DfEmpty, { icon: 'wrench', title: '没有匹配的补丁', hint: '换一个标签或状态筛选试试。' }))),
+
+    /* 与补丁列表互相独立：补丁全 NA 时它们照样工作，所以放在补丁卡之后单独说。 */
   )
+}
+
+/* ---------------------------------------------------------------- 运行时增强 */
+
+/* 锚点与子代理接管：上游 dsh-purge 移植过来的两个运行时钩子，挂在宿主事件上、
+   不写宿主文件，所以单独成卡。它们和「hooks 决定权」指的第三方 hooks 适配器
+   完全是两件事，标题里明确写「运行时钩子」，避免混用。 */
+function DfRuntimeHooks(props) {
+  const d = props.data || {}
+  const a = d.anchor || {}
+  const s = d.subagent_control || {}
+  const aOn = a.enabled === true
+  const sOn = s.enabled === true
+  const at = function (ts) { return ts ? dfAgo(new Date(ts).toISOString()) : '—' }
+  const mounted = (!aOn || a.registered) && (!sOn || s.installed)
+  return h(DfCard, {
+    title: '运行时钩子（立即生效，不写宿主）', icon: 'bolt',
+    sub: '插件在进程内接管行为，不修改任何宿主文件；开关切换后下一轮对话生效',
+  },
+    h('div', { className: 'df-formgrid' },
+      h('div', { className: 'df-field' },
+        h('div', { className: 'df-ops-meta' }, '尾部锚点'),
+        h(DfSeg, {
+          value: aOn ? 'on' : 'off',
+          items: [['on', '启用'], ['off', '关闭']],
+          onChange: function (k) { if (props.busy) return; props.onToggle('anchor', k === 'on') },
+        }),
+        h('div', { className: 'df-hint' }, '在系统提示末尾补一段「操作者授权」声明，防止破甲规则被截断或顶掉。注入本身正常时不建议开——同一套规则会出现两遍。')),
+      h('div', { className: 'df-field' },
+        h('div', { className: 'df-ops-meta' }, '子代理接管'),
+        h(DfSeg, {
+          value: sOn ? 'on' : 'off',
+          items: [['on', '启用'], ['off', '关闭']],
+          onChange: function (k) { if (props.busy) return; props.onToggle('subagentControl', k === 'on') },
+        }),
+        h('div', { className: 'df-hint' }, '子会话默认审批策略是 never，工具调用会被直接判「拒绝」。打开后翻回 ask 问一次，避免子会话一动手就被挡。'))),
+    h(DfKV, {
+      rows: [
+        ['尾部锚点', aOn ? (a.registered ? '已注册' : '等首轮组装') : '已关闭'],
+        ['锚点轮次', a.applied ? dfNum(a.applied) + ' 轮' : '0 轮'],
+        ['锚点位置', 'order ' + (a.order || 10150) + ' · 子会话 ' + (a.child_order || 235)],
+        ['子代理接管', sOn ? (s.installed ? '已接管' : '未挂上') : '已关闭'],
+        ['翻 ask / 放行', dfNum(s.flips || 0) + ' / ' + dfNum(s.allowed || 0)],
+        ['最近生效', [a.lastAt ? '锚点 ' + at(a.lastAt) : '', s.lastAt ? '接管 ' + at(s.lastAt) : ''].filter(Boolean).join(' · ') || '—'],
+      ],
+    }),
+    (!aOn && !sOn)
+      ? h('div', { className: 'df-note' }, '两项都关闭：提示词与审批完全走 DeepSeek Harness 原生逻辑，与不装插件一致。')
+      : (mounted
+        ? h('div', { className: 'df-note' }, '开启的项已在运行：注入正文在最前，锚点补在末位；子会话被写成 never 时会翻回 ask 并放行一次。')
+        : h('div', { className: 'df-note df-note--warn' }, '有开启的项没挂上。多半是宿主版本与插件不匹配，点「写入宿主」修不了 —— 这一栏走的是插件运行路径，重启宿主后重新加载插件即可。')),
+    h('div', { className: 'df-note' }, '与上面的补丁统计互相独立：补丁 0 条时，开启的项仍应显示已注册 / 已接管。'))
 }
 
 /* ---------------------------------------------------------------- 规则集 */
@@ -12591,14 +12848,14 @@ function DfMaintenance(props) {
           value: tab,
           items: [
             ['patch', '补丁' + (pending ? ' · ' + pending : '')],
-            ['hooks', '钩子'],
             ['update', '更新'],
           ],
           onChange: function (k) { setTab(k) },
         })),
       h('div', { className: 'df-maint' },
         tab === 'patch' ? h(DfPatchPanel, { tick: props.tick, onInspect: props.onInspect }) : null,
-        tab === 'hooks' ? h(DfHooksPanel, { tick: props.tick }) : null,
+        tab === 'patch' ? h(DfHooksPanel, { tick: props.tick }) : null,
+
         tab === 'update' ? h(DfUpdatePanel, { tick: props.tick }) : null))
   )
 }
@@ -13531,7 +13788,7 @@ function DfOperatorEditor(props) {
     Promise.resolve(write).then(function (r) {
       setBusy(false)
       if (!r || r.ok === false) { dfToast((r && r.error) || '保存失败', 'err', 4200); return }
-      dfToast('已保存，下一轮生效', 'ok', 2200)
+      dfToast('已保存为「自定义」模板，下一轮生效', 'ok', 2600)
       if (props.onDone) props.onDone(r)
     }, function (e) {
       setBusy(false)
@@ -13540,8 +13797,9 @@ function DfOperatorEditor(props) {
   }
 
   return h('div', { className: 'df-detail' },
-    h('div', { className: 'df-note' }, '改完下一轮生效；宿主内建身份不在这里。'),
-    h('div', { className: 'df-note', style: { marginTop: 6 } }, '保留 <|im_start|>system: 信封和 <project_instructions> 标签，删了注入会失效。'),
+    h('div', { className: 'df-note' }, '只写正文也能保存：自动补齐 <|im_start|>system:、<project_instructions> 和 </project_instructions>；已经有的不会重复加。'),
+    h('div', { className: 'df-note', style: { marginTop: 6 } }, '保存会落成「自定义」模板并立即切过去；内置的最简/全量模板不会被改。'),
+    h('div', { className: 'df-note', style: { marginTop: 6 } }, '下一轮生效；宿主内建身份不在这里。'),
     h('textarea', {
       className: 'df-area df-area--doc', value: text, rows: 20, spellCheck: false,
       style: { width: '100%', fontFamily: 'var(--df-mono)', fontSize: 13, lineHeight: 1.7 },
@@ -13573,7 +13831,7 @@ function DfTemplateSaver(props) {
   }
 
   return h('div', { className: 'df-detail' },
-    h('div', { className: 'df-note' }, '只保存操作员注入层；应用会覆盖当前注入。'),
+    h('div', { className: 'df-note' }, '只保存操作员注入层；保存时自动补齐信封。应用会覆盖当前注入。'),
     h('label', { className: 'df-label', style: { display: 'block', marginTop: 8 } }, '模板名称'),
     h('input', {
       className: 'df-input', value: name, autoFocus: true, placeholder: '例如：红队-简洁版 / 逆向-只读',

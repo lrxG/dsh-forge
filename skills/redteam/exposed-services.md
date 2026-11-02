@@ -1,6 +1,6 @@
 ---
 name: exposed-services
-description: 暴露服务面的判断：Redis/MySQL/MSSQL/ES/Docker/MongoDB 等端口直连取数与写马的成立条件（应用层身份面见 unauth-identity）
+description: 暴露服务面：Redis/MySQL/MSSQL/ES/Docker/MongoDB 直连取数/写马的条件。
 whenToUse: 发现暴露的数据库与中间件端口（6379/3306/1433/9200/27017/2375），或 Web 侧怀疑存在未授权接口时
 role: exploit
 enabled: true

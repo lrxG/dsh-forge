@@ -1,6 +1,6 @@
 ---
 name: rev-u3d-dump
-description: Dump Unity IL2CPP symbols from iOS/Android builds. Extract method names, addresses, and type info from IL2CPP binaries and global-metadata.dat, then generate IDA/Ghidra import scripts.
+description: Unity IL2CPP 符号 dump：从二进制/global-metadata 提取方法名、地址，生成 IDA/Ghidra 脚本。
 whenToUse: "要 dump Unity IL2CPP 的 C# 符号并导入 IDA/Ghidra 时"
 ---
 

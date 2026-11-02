@@ -1,6 +1,6 @@
 ---
 name: rev-struct
-description: Reconstruct data structures by analyzing memory access patterns across functions
+description: 从内存访问模式恢复结构体布局。
 whenToUse: 反编译里全是 *(a1+0x10) 这类偏移访问、需要还原结构体布局时
 ---
 

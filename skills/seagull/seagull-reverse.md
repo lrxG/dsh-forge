@@ -1,6 +1,6 @@
 ---
 name: seagull-reverse
-description: 深度逆向：PE/ELF/Mach-O、固件、驱动、APK/DEX、.NET、Go/Rust、IL2CPP、Unreal，解包、去混淆、VM 与协议重构、打补丁。
+description: 深度逆向：PE/ELF/Mach-O、固件、APK/DEX、.NET、Go/Rust、IL2CPP、Unreal、脱壳、协议重构、补丁。
 whenToUse: 要逆二进制/固件/APK/.NET/IL2CPP/Unreal，或去混淆、重构协议、定位补丁点时
 ---
 

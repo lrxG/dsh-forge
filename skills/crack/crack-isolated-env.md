@@ -21,6 +21,12 @@ enabled: true
 - 样本检测到虚拟环境就退出，说明环境本身就是它的判断依据 → 换真机或改特征，不硬在本机跑。
 - 用户坚持宿主机：说清风险后照做，不再劝。
 
+## 工具
+
+- 先跑 `crack_toolchain({action:"status"})` 看 frida / adb / objection 是否可用。
+- 缺 frida-server 或 adb 时先补齐环境，不要把“挂不上 hook”当成目标行为。
+- 动态配方从 `crack_frida_recipe` 取，不自动 attach。
+
 ## 交付
 
 用了什么环境、是否断网、快照点、注入工具版本。

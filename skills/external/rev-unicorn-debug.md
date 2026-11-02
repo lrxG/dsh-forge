@@ -1,6 +1,6 @@
 ---
 name: rev-unicorn-debug
-description: Debug and emulate specific code fragments or functions using the Unicorn engine. Activate when the user wants to emulate a function with Unicorn, trace binary execution without running the full program, decrypt or decode data by emulating the algorithm, or bypass environment dependencies (JNI, syscalls, libc) during emulation.
+description: Unicorn 模拟执行函数：emulate/trace 指定片段，绕过 JNI/syscall/libc，解密或验证算法。
 whenToUse: 要用 Unicorn 模拟执行单个函数、不跑全程序、或要绕开 JNI/syscall/libc 依赖时
 ---
 

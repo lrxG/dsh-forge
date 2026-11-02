@@ -1,6 +1,6 @@
 ---
 name: finding-severity
-description: 漏洞定级的判断：按实际拿到什么与前提定 critical/high/medium/low，不和扫描器标签、也不和靶场得分混为一谈
+description: 漏洞定级：按实际拿到什么与前提定级，不套扫描器标签。
 whenToUse: 入库漏洞要填 severity，或要解释某条为什么是 high 而不是 medium
 role: review
 enabled: true

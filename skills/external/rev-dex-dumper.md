@@ -1,6 +1,6 @@
 ---
 name: rev-dex-dumper
-description: Dump DEX files from a running Android app for unpacking/deobfuscation. Activate when the user wants to unpack an Android APK, dump DEX from memory, extract decrypted DEX files, or defeat class-loading packing.
+description: Android 内存 dump DEX：APK 脱壳、去混淆、提取解密后的 DEX。
 whenToUse: APK 有类加载壳、需要从运行中进程内存 dump DEX 时
 ---
 
