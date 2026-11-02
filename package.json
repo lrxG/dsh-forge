@@ -1,6 +1,6 @@
 {
   "name": "dsh-forge",
-  "version": "2.3.5",
+  "version": "2.3.6",
   "private": true,
   "type": "module",
   "description": "DSH 本地增强：宿主提示词/审批链改写、红队预设、逆向工作流",
