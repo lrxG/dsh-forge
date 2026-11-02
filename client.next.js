@@ -5210,6 +5210,18 @@ function dfCurrentAgentPreset() {
   return 'redteam'
 }
 
+/** 与服务端 normalizeModeId 对齐的精简版：worker / 命名空间 / 中文都归到主模式。 */
+function dfModeId(value) {
+  let m = String(value || '').toLowerCase()
+  if (!m) return ''
+  if (m.endsWith('/redteam-worker')) return 'redteam'
+  if (m.endsWith('/crack-worker')) return 'crack'
+  if (m.endsWith('-worker')) m = m.slice(0, -7)
+  if (m.endsWith('/redteam') || m === 'preset-redteam' || m === 'red-team' || /红队/.test(m)) return 'redteam'
+  if (m.endsWith('/crack') || m === 'preset-crack' || /破解/.test(m)) return 'crack'
+  return m
+}
+
 function dfScopeCovered(mode, scopes) {
   let m = String(mode || '').toLowerCase()
   if (/红队/.test(m)) m = 'redteam'
@@ -10392,7 +10404,14 @@ function DfInstructionEditor(props) {
   const [loaded, setLoaded] = useState(false)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const dirty = loaded && text !== orig
+
+  useEffect(function () {
+    if (!confirmDelete) return undefined
+    const t = window.setTimeout(function () { setConfirmDelete(false) }, 5000)
+    return function () { window.clearTimeout(t) }
+  }, [confirmDelete])
 
   useEffect(function () {
     let alive = true
@@ -10437,6 +10456,15 @@ function DfInstructionEditor(props) {
     h('div', { className: 'df-formfoot' },
       h('span', { className: 'df-ops-meta' }, dfNum(text.length) + ' 字符 · 下一轮生效'),
       h('span', { className: 'df-spacer' }),
+      props.file && props.file.exists && props.onDelete ? h(DfBtn, {
+        size: 'sm', kind: confirmDelete ? 'danger' : 'ghost', icon: 'trash', disabled: busy,
+        onClick: function () {
+          if (!confirmDelete) { setConfirmDelete(true); return }
+          setConfirmDelete(false)
+          props.onDelete()
+        },
+        onBlur: function () { setConfirmDelete(false) },
+      }, confirmDelete ? '确认删除文件' : '删除文件') : null,
       h(DfBtn, { size: 'sm', kind: 'primary', icon: 'check', disabled: busy || !dirty, onClick: save }, busy ? '保存中…' : '保存')))
 }
 
@@ -10548,8 +10576,10 @@ function DfMainInject(props) {
   const content = String(d.content || '')
   const template = String(d.template || '')
   const current = templates.find(function (t) { return t.id === template })
+  /* "custom" 既可能是通用未保存标记，也可能是真实的自定义模板；有文件才算模板。 */
+  const customMissing = template === 'custom' && !current
   const currentName = template === 'custom'
-    ? '自定义'
+    ? (current ? current.name : '自定义')
     : (current ? current.name : (template || '—'))
   const scopeNames = scopes.map(function (id) {
     const hit = modes.find(function (m) { return m.id === id })
@@ -10561,7 +10591,8 @@ function DfMainInject(props) {
   const currentCovered = dfScopeCovered(currentMode, scopes)
   const currentStock = dfStockMode(currentMode)
   const builtin = template === 'minimal' || template === 'redteam'
-  const canDelete = !builtin && template !== 'custom' && !!current
+  /* 有真实模板文件才给删除；旧的 "custom" 标记没有文件时 current 为空，不会误删。 */
+  const canDelete = !builtin && !!current
 
   function post(action, extra) {
     if (busy) return Promise.resolve(null)
@@ -10624,7 +10655,12 @@ function DfMainInject(props) {
         onSave: function (text) {
           return dfHostPost('/dsh-forge/inject', { action: 'saveContent', content: text })
         },
-        onDone: function () { if (props.onChanged) props.onChanged(); dfBust() },
+        onDone: function () {
+          if (props.onChanged) props.onChanged()
+          dfBust()
+          /* 保存后回到模板列表，新生成的自定义模板马上能看到删除按钮。 */
+          if (props.onCloseDrawer) props.onCloseDrawer()
+        },
       }),
     })
   }
@@ -10651,7 +10687,7 @@ function DfMainInject(props) {
     post('reset').then(function (r) {
       if (r && r.ok !== false) {
         setConfirmReset(false)
-        dfToast('已恢复最简破甲', 'ok', 2600)
+        dfToast('已恢复默认全量破甲', 'ok', 2600)
       }
     })
   }
@@ -10734,15 +10770,14 @@ function DfMainInject(props) {
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 } },
       h('span', { className: 'df-label' }, '模板'),
       h('select', {
-        className: 'df-select', value: template === 'custom' ? '' : template,
+        className: 'df-select', value: customMissing ? '' : template,
         disabled: !!busy,
         style: { width: 220 },
         onChange: function (e) { applyTemplate(e.target.value) },
       },
-        template === 'custom' ? h('option', { value: '' }, '自定义（未保存为模板）') : null,
+        customMissing ? h('option', { value: '' }, '自定义（未保存为模板）') : null,
         templates.map(function (t) {
-          return h('option', { key: t.id, value: t.id },
-            t.name + (t.builtin ? '' : ' · 自定义'))
+          return h('option', { key: t.id, value: t.id }, t.name)
         })),
       canDelete ? h(DfBtn, {
         size: 'sm', kind: confirmDelete ? 'danger' : 'ghost', icon: 'trash', disabled: !!busy,
@@ -10760,7 +10795,7 @@ function DfMainInject(props) {
 
     h('div', { className: 'df-scope-line' },
       h('div', { className: 'df-scope-main' },
-        h('span', { className: 'df-label' }, '生效范围'),
+        h('span', { className: 'df-label' }, '生效范围（仅勾选的模式）'),
         scopeNames.length
           ? h('div', { className: 'df-scope-chips' },
             scopeNames.slice(0, 4).map(function (name) {
@@ -10773,7 +10808,7 @@ function DfMainInject(props) {
       h(DfBtn, {
         size: 'sm', kind: 'ghost', icon: 'sliders', disabled: !!busy,
         onClick: openScopes,
-      }, '管理')),
+      }, '选择模式')),
 
     h('div', { className: 'df-note' }, '没勾的模式保持 DeepSeek Harness 原生人格；改动下一轮生效。'),
     content
@@ -10801,14 +10836,25 @@ function DfInjectSelfCheck(props) {
   function check() {
     if (busy) return
     setBusy(true)
-    dfHost('/dsh-forge/assembled').then(function (r) {
+    /* 必须按当前模式取快照：全局最后一次组装可能来自 standard/别的会话。 */
+    const mode = dfModeId(dfCurrentAgentPreset())
+    const query = mode ? '?mode=' + encodeURIComponent(mode) : ''
+    dfHost('/dsh-forge/assembled' + query).then(function (r) {
       setBusy(false)
       if (!r || r.ok === false) {
         setRes({ state: 'error', msg: (r && r.error) || '读不到实际组装' })
         return
       }
       if (r.empty) {
-        setRes({ state: 'empty', msg: '还没有捕获到组装结果；先在当前会话发一条消息，再点「重新检查」。' })
+        setRes({ state: 'empty', msg: '当前模式还没有捕获到组装结果；先在当前会话发一条消息，再点「重新检查」。', mode: mode })
+        return
+      }
+      if (mode && r.mode && String(r.mode) !== String(mode)) {
+        setRes({
+          state: 'miss',
+          msg: '最近一次捕获属于「' + dfModeTitle(r.mode) + '」，不是当前模式；请先在当前模式发一条消息再检查。',
+          mode: r.mode,
+        })
         return
       }
       const secs = Array.isArray(r.sections) ? r.sections : []
@@ -10969,6 +11015,18 @@ function DfInstructionsPage(props) {
           f.exists = true
           bump()
           openInstruction(f)
+        },
+        onDelete: function () {
+          return dfHostPost('/dsh-forge/instructions', { action: 'delete', path: f.path }).then(function (r) {
+            if (!r || r.ok === false) { dfToast((r && r.error) || '删除失败', 'err', 4200); return r }
+            f.exists = false
+            f.size = 0
+            f.mtime = null
+            dfToast('指令文件已删除，下一轮生效', 'ok', 2600)
+            if (props.onCloseDrawer) props.onCloseDrawer()
+            bump()
+            return r
+          })
         },
       }),
     })
@@ -13730,7 +13788,7 @@ function DfOperatorEditor(props) {
     Promise.resolve(write).then(function (r) {
       setBusy(false)
       if (!r || r.ok === false) { dfToast((r && r.error) || '保存失败', 'err', 4200); return }
-      dfToast('已保存，下一轮生效', 'ok', 2200)
+      dfToast('已保存为「自定义」模板，下一轮生效', 'ok', 2600)
       if (props.onDone) props.onDone(r)
     }, function (e) {
       setBusy(false)
@@ -13739,8 +13797,9 @@ function DfOperatorEditor(props) {
   }
 
   return h('div', { className: 'df-detail' },
-    h('div', { className: 'df-note' }, '改完下一轮生效；宿主内建身份不在这里。'),
-    h('div', { className: 'df-note', style: { marginTop: 6 } }, '保留 <|im_start|>system: 信封和 <project_instructions> 标签，删了注入会失效。'),
+    h('div', { className: 'df-note' }, '只写正文也能保存：自动补齐 <|im_start|>system:、<project_instructions> 和 </project_instructions>；已经有的不会重复加。'),
+    h('div', { className: 'df-note', style: { marginTop: 6 } }, '保存会落成「自定义」模板并立即切过去；内置的最简/全量模板不会被改。'),
+    h('div', { className: 'df-note', style: { marginTop: 6 } }, '下一轮生效；宿主内建身份不在这里。'),
     h('textarea', {
       className: 'df-area df-area--doc', value: text, rows: 20, spellCheck: false,
       style: { width: '100%', fontFamily: 'var(--df-mono)', fontSize: 13, lineHeight: 1.7 },
@@ -13772,7 +13831,7 @@ function DfTemplateSaver(props) {
   }
 
   return h('div', { className: 'df-detail' },
-    h('div', { className: 'df-note' }, '只保存操作员注入层；应用会覆盖当前注入。'),
+    h('div', { className: 'df-note' }, '只保存操作员注入层；保存时自动补齐信封。应用会覆盖当前注入。'),
     h('label', { className: 'df-label', style: { display: 'block', marginTop: 8 } }, '模板名称'),
     h('input', {
       className: 'df-input', value: name, autoFocus: true, placeholder: '例如：红队-简洁版 / 逆向-只读',

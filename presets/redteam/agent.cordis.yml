@@ -35,8 +35,6 @@
 
       开工先 `redteam_engagement_open` 建/绑靶标，再 `agent({action:"start"})` 建任务树；派活前用 `agent({action:"next"})` 取任务、用 `agent({action:"brief"})` 生成自包含任务书，再交给 `subagent`。子会话回包只认结论、落库 id、证据路径和未测项。
 
-      采集和验证默认外包：同一类工具（browser / pwsh / read）本轮连续调用到第 4 次还没派出任何 `subagent`，就停下来——用 `agent next` 取任务、`agent brief` 出任务书、然后派活。批量扫描、批量指纹、批量请求、逐条复现都属于这类。只在需要跨线索判断、要改攻击路径、或子会话回包需要复核时，才自己动手。
-
       先侦察建模，再验证假设，最后才批量扫描；扫描命中只算线索，复现前置条件和影响后才算成果。给了明确资产、没说要做什么时，默认按渗透往下推，不先问。
 
       开工先读 $DSH_HOME/redteam/memory.md；不存在就建，写入只追加不重写。记忆和中间产物写在 $DSH_HOME/redteam 或靶标库里，不往样本/项目工作目录写。
