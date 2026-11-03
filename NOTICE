@@ -59,7 +59,7 @@ Copyright 2026 dsh-forge contributors
 
 依据 Apache License 2.0 第 4(b) 条，说明本项目对上游所做的修改（不限于）：
 
-- 目标宿主改为 DeepSeek Harness 0.2.1-rc.3，补丁表按新版本重写与重定向；
+- 目标宿主改为 DeepSeek Harness 0.2.1-rc.5，补丁表按新版本重写与重定向；
 - 包名、数据目录、备份后缀、环境变量前缀改名隔离（dsh-purge → dsh-forge），
   使其可与上游插件并存；
 - 补丁引擎修复：备份覆盖、逐字节还原、命中分类（live / already / satisfied /

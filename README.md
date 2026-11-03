@@ -1,7 +1,7 @@
 # dsh-forge
 
 > 面向 **DeepSeek Harness（dsh）** 的本地安全增强插件：**破甲** + **红队模式** + **破解模式**。
-> 当前发布线 **2.3.x**；目标宿主 dsh **0.2.1-rc.5**（Windows 桌面版，Node ≥ 22.5）。
+> 当前发布线 **2.3.x**；目标宿主 dsh **0.2.1-rc.5**（Windows 桌面版，Node ≥ 22.13）。
 >
 > **模型兼容**：默认按 DeepSeek 系模型调校，支持 **DeepSeek 官方模型**，以及兼容 OpenAI 协议的部分中转站转发的 **DeepSeek 模型**。其他模型也能用，但破甲注入和措辞效果会因模型而异；`dsh-forge --models` 可查看模型画像。
 
@@ -173,7 +173,7 @@ dsh 是通用 Agent 壳。dsh-forge 做三件事：**改宿主拿权限**、**�
 - 不内置扫描器二进制、Chrome 和第三方 key；`browser` 工具复用本机已安装的 Chrome/Edge。
 - 靶标绑定按会话/进程保存：重启或换窗口后先 `session_info`，未绑定先 `session_bind`；子会话只认自己的绑定，未绑定会直接报错，不会借用主会话或面板的「当前靶标」。
 - 报告收口是硬门：有待复核漏洞、未覆盖/只做了一部分、无证据、HTTP 目标的 exploited 缺报文、未关假设、步骤缺命令/结果、隧道/WebShell 不成立时，正式报告会被拦住；草稿和强制生成是显式例外。数据库、SSH、弱口令、源码泄露这类非 HTTP 漏洞只要求 evidence，不强制 HTTP 报文。
-- 主要面向 Windows 桌面版；Linux / macOS 和远程 Web 宿主未适配。
+- 主要面向 Windows 桌面版；Linux 和远程 Web 宿主未适配。macOS 只做「运行时破甲 + 核心 5 条补丁 + Keychain 配置」，**未在真机验证**；细节见仓库内 `docs/mac-support.md`（开发文档，不随发布包）。
 - 模型行为和注入效果取决于所用模型/中转站，不保证跨模型一致。
 
 ## 后续优化方向
