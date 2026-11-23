@@ -1,6 +1,6 @@
 {
   "name": "dsh-forge",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "private": true,
   "type": "module",
   "description": "DSH 本地增强：宿主提示词/审批链改写、红队预设、逆向工作流",
@@ -48,7 +48,7 @@
       ]
     }
   },
-  "dshTarget": "0.2.1-rc.5",
+  "dshTarget": "0.2.2-rc.5",
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
   },

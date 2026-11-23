@@ -209,12 +209,10 @@
   config:
     # 官方 experimental-agent-team-profile 会在 profile 层 disabled 掉同名行。
     # 红队必须显式 disabled: false，否则只有 spawn_teammate，指挥按 subagent 派活会失败。
+    # 0.2.2 起主包自己注册 list_agents / wait_agent；不要再挂 /list-agents 子路径
+    # （rc5 的 exports 只有 "."，那条会让整个预设判 broken、模式从下拉里消失）。
     - id: tool-subagent-control
       name: '@deepseek-ai/dsh-tool-subagent-control'
-      disabled: false
-
-    - id: tool-subagent-list-agents
-      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
       disabled: false
 
     - id: tool-subagent
